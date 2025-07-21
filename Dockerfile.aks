@@ -1,0 +1,124 @@
+# Multi-stage Dockerfile for AKS deployment
+# Combines frontend and backend in a single pod for optimal communication
+
+# Stage 1: Build Frontend
+FROM node:18-alpine AS frontend-builder
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
+RUN npm ci --only=production
+COPY frontend/ ./
+RUN npm run build
+
+# Stage 2: Build Backend
+FROM node:18-alpine AS backend-builder
+WORKDIR /app/backend
+COPY backend/package*.json ./
+RUN npm ci --only=production
+COPY backend/ ./
+# Build if using TypeScript
+# RUN npm run build
+
+# Stage 3: Production Frontend (nginx)
+FROM nginx:alpine AS frontend-production
+# Install additional tools for health checks
+RUN apk add --no-cache curl netcat-openbsd
+
+# Create non-root user
+RUN addgroup -g 1001 -S nginx-user && \
+    adduser -S -D -H -u 1001 -h /var/cache/nginx -s /sbin/nologin -G nginx-user -g nginx-user nginx-user
+
+# Copy built frontend
+COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
+
+# Copy nginx configuration
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+
+# Create necessary directories with proper permissions
+RUN mkdir -p /var/cache/nginx /var/run /tmp && \
+    chown -R nginx-user:nginx-user /var/cache/nginx /var/run /tmp /usr/share/nginx/html && \
+    chmod -R 755 /var/cache/nginx /var/run /tmp
+
+# Switch to non-root user
+USER nginx-user
+
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+
+# Stage 4: Production Backend (Node.js)
+FROM node:18-alpine AS backend-production
+# Install additional tools for health checks and database connectivity
+RUN apk add --no-cache netcat-openbsd curl
+
+# Create non-root user
+RUN addgroup -g 1001 -S node-user && \
+    adduser -S -D -H -u 1001 -h /app -s /bin/sh -G node-user -g node-user node-user
+
+WORKDIR /app
+
+# Copy built backend
+COPY --from=backend-builder /app/backend .
+
+# Create logs directory with proper permissions
+RUN mkdir -p /app/logs /tmp && \
+    chown -R node-user:node-user /app /tmp && \
+    chmod -R 755 /app /tmp
+
+# Switch to non-root user
+USER node-user
+
+EXPOSE 3001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:3001/health || exit 1
+
+CMD ["node", "index.js"]
+
+# Stage 5: Combined production image for AKS pod
+FROM alpine:3.18 AS production
+
+# Install required packages
+RUN apk add --no-cache \
+    nginx \
+    nodejs \
+    npm \
+    curl \
+    netcat-openbsd \
+    supervisor \
+    tzdata
+
+# Create non-root users
+RUN addgroup -g 1001 -S app-users && \
+    adduser -S -D -H -u 1001 -h /app -s /bin/sh -G app-users -g app-users app-user
+
+# Set timezone
+ENV TZ=UTC
+
+# Copy frontend files
+COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+
+# Copy backend files
+WORKDIR /app
+COPY --from=backend-builder /app/backend .
+
+# Create necessary directories
+RUN mkdir -p /var/cache/nginx /var/run /tmp /app/logs && \
+    chown -R app-user:app-users /var/cache/nginx /var/run /tmp /app /usr/share/nginx/html && \
+    chmod -R 755 /var/cache/nginx /var/run /tmp /app /usr/share/nginx/html
+
+# Configure supervisor
+COPY aks/supervisor/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+# Switch to non-root user
+USER app-user
+
+# Expose ports
+EXPOSE 80 3001
+
+# Health check for combined container
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost/health && curl -f http://localhost:3001/health || exit 1
+
+# Start supervisor to manage both nginx and node processes
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

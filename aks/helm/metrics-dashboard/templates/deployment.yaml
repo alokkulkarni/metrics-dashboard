@@ -1,0 +1,213 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "metrics-dashboard.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "metrics-dashboard.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "metrics-dashboard.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "metrics-dashboard.selectorLabels" . | nindent 8 }}
+        version: v1
+      annotations:
+        {{- include "metrics-dashboard.podAnnotations" . | nindent 8 }}
+    spec:
+      {{- include "metrics-dashboard.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "metrics-dashboard.serviceAccountName" . }}
+      {{- include "metrics-dashboard.podSecurityContext" . | nindent 6 }}
+      
+      # Init container to verify database connectivity
+      initContainers:
+      - name: db-migration
+        image: {{ include "metrics-dashboard.backend.image" . }}
+        command:
+        - sh
+        - -c
+        - |
+          echo "Checking database connectivity..."
+          until nc -z $DB_HOST $DB_PORT; do
+            echo "Waiting for database..."
+            sleep 2
+          done
+          echo "Database is ready!"
+        envFrom:
+        - configMapRef:
+            name: {{ include "metrics-dashboard.fullname" . }}-config
+        - secretRef:
+            name: {{ include "metrics-dashboard.fullname" . }}-secrets
+        {{- include "metrics-dashboard.containerSecurityContext" . | nindent 8 }}
+      
+      containers:
+      # Frontend Container (nginx)
+      - name: frontend
+        image: {{ include "metrics-dashboard.frontend.image" . }}
+        imagePullPolicy: {{ .Values.image.frontend.pullPolicy }}
+        ports:
+        - containerPort: 80
+          name: http
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: {{ include "metrics-dashboard.fullname" . }}-config
+        env:
+        - name: BACKEND_URL
+          value: "http://localhost:3001"
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+          readOnly: true
+        - name: tmp-volume
+          mountPath: /tmp
+        - name: cache-volume
+          mountPath: /var/cache/nginx
+        - name: run-volume
+          mountPath: /var/run
+        {{- include "metrics-dashboard.frontend.resources" . | nindent 8 }}
+        {{- include "metrics-dashboard.containerSecurityContext" . | nindent 8 }}
+        {{- with .Values.security.containerSecurityContext }}
+        securityContext:
+          {{- toYaml . | nindent 10 }}
+          capabilities:
+            add:
+            - NET_BIND_SERVICE
+        {{- end }}
+        {{- if .Values.healthChecks.livenessProbe.enabled }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: {{ .Values.healthChecks.livenessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.healthChecks.livenessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.healthChecks.livenessProbe.timeoutSeconds }}
+          failureThreshold: {{ .Values.healthChecks.livenessProbe.failureThreshold }}
+        {{- end }}
+        {{- if .Values.healthChecks.readinessProbe.enabled }}
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: {{ .Values.healthChecks.readinessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.healthChecks.readinessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.healthChecks.readinessProbe.timeoutSeconds }}
+          failureThreshold: {{ .Values.healthChecks.readinessProbe.failureThreshold }}
+        {{- end }}
+      
+      # Backend Container (Node.js API)
+      - name: backend
+        image: {{ include "metrics-dashboard.backend.image" . }}
+        imagePullPolicy: {{ .Values.image.backend.pullPolicy }}
+        ports:
+        - containerPort: 3001
+          name: api
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: {{ include "metrics-dashboard.fullname" . }}-config
+        - secretRef:
+            name: {{ include "metrics-dashboard.fullname" . }}-secrets
+        env:
+        - name: DATABASE_URL
+          value: {{ include "metrics-dashboard.database.connectionString" . | quote }}
+        volumeMounts:
+        {{- if .Values.persistence.enabled }}
+        - name: logs-volume
+          mountPath: /app/logs
+        - name: tmp-volume
+          mountPath: /tmp
+        {{- end }}
+        {{- if .Values.azure.keyVault.enabled }}
+        - name: secrets-store
+          mountPath: /mnt/secrets-store
+          readOnly: true
+        {{- end }}
+        {{- include "metrics-dashboard.backend.resources" . | nindent 8 }}
+        {{- include "metrics-dashboard.containerSecurityContext" . | nindent 8 }}
+        {{- if .Values.healthChecks.livenessProbe.enabled }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: 60
+          periodSeconds: {{ .Values.healthChecks.livenessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.healthChecks.livenessProbe.timeoutSeconds }}
+          failureThreshold: {{ .Values.healthChecks.livenessProbe.failureThreshold }}
+        {{- end }}
+        {{- if .Values.healthChecks.readinessProbe.enabled }}
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 3001
+          initialDelaySeconds: {{ .Values.healthChecks.readinessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.healthChecks.readinessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.healthChecks.readinessProbe.timeoutSeconds }}
+          failureThreshold: {{ .Values.healthChecks.readinessProbe.failureThreshold }}
+        {{- end }}
+        {{- if .Values.healthChecks.startupProbe.enabled }}
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 3001
+          initialDelaySeconds: {{ .Values.healthChecks.startupProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.healthChecks.startupProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.healthChecks.startupProbe.timeoutSeconds }}
+          failureThreshold: {{ .Values.healthChecks.startupProbe.failureThreshold }}
+        {{- end }}
+      
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: {{ include "metrics-dashboard.fullname" . }}-nginx-config
+          defaultMode: 0644
+      {{- if .Values.persistence.enabled }}
+      - name: logs-volume
+        persistentVolumeClaim:
+          claimName: {{ include "metrics-dashboard.fullname" . }}-logs
+      - name: tmp-volume
+        persistentVolumeClaim:
+          claimName: {{ include "metrics-dashboard.fullname" . }}-tmp
+      {{- end }}
+      - name: cache-volume
+        emptyDir: {}
+      - name: run-volume
+        emptyDir: {}
+      {{- if .Values.azure.keyVault.enabled }}
+      - name: secrets-store
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: {{ include "metrics-dashboard.fullname" . }}-secrets-provider
+      {{- end }}
+      
+      # Pod scheduling and affinity
+      {{- if .Values.affinity.podAntiAffinity.enabled }}
+      affinity:
+        podAntiAffinity:
+          {{- include "metrics-dashboard.podAntiAffinity" . | nindent 10 }}
+      {{- end }}
+      
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      dnsPolicy: ClusterFirst

@@ -1,0 +1,44 @@
+/* BoardDetails specific styles */
+
+.velocity-bar {
+  width: 4rem;
+  background-color: #e5e7eb;
+  border-radius: 9999px;
+  height: 0.5rem;
+  transition: all 0.3s ease;
+}
+
+.velocity-bar-fill {
+  background-color: #3b82f6;
+  height: 0.5rem;
+  border-radius: 9999px;
+  transition: all 0.3s ease;
+}
+
+.completion-rate-bar {
+  width: 4rem;
+  background-color: #e5e7eb;
+  border-radius: 9999px;
+  height: 0.5rem;
+  margin-left: 0.5rem;
+  transition: all 0.3s ease;
+}
+
+.completion-rate-bar-fill {
+  height: 0.5rem;
+  border-radius: 9999px;
+  transition: all 0.3s ease;
+  max-width: 100%;
+}
+
+.completion-rate-bar-fill.high {
+  background-color: #10b981; /* green-500 */
+}
+
+.completion-rate-bar-fill.medium {
+  background-color: #f59e0b; /* yellow-500 */
+}
+
+.completion-rate-bar-fill.low {
+  background-color: #ef4444; /* red-500 */
+}

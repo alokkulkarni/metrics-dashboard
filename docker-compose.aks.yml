@@ -1,0 +1,119 @@
+# docker-compose.aks.yml
+# Production-ready Docker Compose configuration for AKS deployment
+# This file demonstrates the architecture changes needed for AKS migration
+
+version: '3.8'
+
+services:
+  # Combined Frontend + Backend Application Pod
+  # In AKS, this will be deployed as a single pod with two containers
+  metrics-app:
+    build:
+      context: .
+      dockerfile: Dockerfile.aks
+    restart: unless-stopped
+    environment:
+      # Application Configuration
+      NODE_ENV: production
+      PORT: 3001
+      
+      # Azure Database for PostgreSQL (Managed Service)
+      DB_HOST: ${AZURE_POSTGRES_HOST:-metrics-db-server.postgres.database.azure.com}
+      DB_PORT: 5432
+      DB_NAME: ${AZURE_POSTGRES_DB:-metrics_dashboard}
+      DB_USER: ${AZURE_POSTGRES_USER:-azureuser}
+      DB_SSL: true
+      
+      # Frontend Configuration
+      FRONTEND_URL: https://${AKS_CLUSTER_FQDN:-metrics-dashboard.example.com}
+      VITE_API_BASE_URL: http://localhost:3001
+      
+      # Security Configuration (will be stored in Azure Key Vault)
+      JWT_SECRET: ${JWT_SECRET}
+      
+      # Jira Configuration (from Azure Key Vault)
+      JIRA_BASE_URL: ${JIRA_BASE_URL}
+      JIRA_EMAIL: ${JIRA_EMAIL}
+      JIRA_API_TOKEN: ${JIRA_API_TOKEN}
+      
+      # Auto-sync Configuration
+      JIRA_SYNC_INTERVAL_HOURS: 2
+      JIRA_AUTO_SYNC_ENABLED: true
+      
+      # Logging
+      LOG_LEVEL: info
+      
+      # Azure Integration
+      AZURE_KEY_VAULT_URL: ${AZURE_KEY_VAULT_URL}
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID}
+      
+    ports:
+      - "3000:80"    # Frontend (nginx)
+      - "3001:3001"  # Backend API
+    
+    # Health checks for Kubernetes readiness/liveness probes
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost/health && curl -f http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    # Resource limits (will be translated to Kubernetes resource requests/limits)
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    
+    # Security context
+    user: "1001:1001"
+    
+    # Volume mounts for logs and temporary files
+    volumes:
+      - app_logs:/app/logs
+      - tmp_data:/tmp
+    
+    networks:
+      - metrics-network
+
+  # Azure Application Gateway / Ingress Controller (simulated)
+  # In AKS, this will be replaced by Azure Application Gateway or NGINX Ingress
+  ingress-controller:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./aks/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./aks/ssl:/etc/ssl/certs:ro
+    depends_on:
+      - metrics-app
+    networks:
+      - metrics-network
+
+volumes:
+  # These will be replaced by Azure Disk/Files in AKS
+  app_logs:
+    driver: local
+  tmp_data:
+    driver: local
+
+networks:
+  metrics-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# External dependencies (not in compose, managed by Azure)
+# - Azure Database for PostgreSQL (Flexible Server)
+# - Azure Container Registry (ACR)
+# - Azure Key Vault
+# - Azure Application Gateway
+# - Azure Monitor / Application Insights
+# - Azure Log Analytics Workspace

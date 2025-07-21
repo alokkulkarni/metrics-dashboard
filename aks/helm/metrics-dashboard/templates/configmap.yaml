@@ -1,0 +1,139 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "metrics-dashboard.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "metrics-dashboard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: configuration
+data:
+  # Application Configuration
+  NODE_ENV: {{ .Values.config.nodeEnv | quote }}
+  PORT: "3001"
+  
+  # Database Configuration
+  DB_HOST: {{ .Values.azure.database.host | quote }}
+  DB_PORT: {{ .Values.azure.database.port | quote }}
+  DB_NAME: {{ .Values.azure.database.name | quote }}
+  DB_USER: {{ .Values.azure.database.user | quote }}
+  DB_SSL: "true"
+  
+  # Frontend Configuration
+  {{- with (index .Values.ingress.hosts 0) }}
+  FRONTEND_URL: {{ printf "https://%s" .host | quote }}
+  {{- end }}
+  VITE_API_BASE_URL: "http://localhost:3001"
+  
+  # Auto-sync Configuration
+  JIRA_SYNC_INTERVAL_HOURS: {{ .Values.config.jira.syncIntervalHours | quote }}
+  JIRA_AUTO_SYNC_ENABLED: {{ .Values.config.jira.autoSyncEnabled | quote }}
+  
+  # Logging Configuration
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  
+  # JWT Configuration
+  JWT_EXPIRES_IN: {{ .Values.config.jwt.expiresIn | quote }}
+  
+  # Azure Integration
+  {{- if .Values.azure.keyVault.enabled }}
+  AZURE_KEY_VAULT_URL: {{ include "metrics-dashboard.keyVault.url" . | quote }}
+  {{- end }}
+  
+  # Application Insights
+  {{- if .Values.azure.monitoring.enabled }}
+  APPLICATIONINSIGHTS_CONNECTION_STRING: {{ .Values.azure.monitoring.applicationInsightsKey | quote }}
+  {{- end }}
+  
+  # Health Check Configuration
+  HEALTH_CHECK_PATH: "/health"
+  READINESS_CHECK_PATH: "/ready"
+  
+  # Rate Limiting
+  RATE_LIMIT_WINDOW_MS: {{ .Values.config.rateLimiting.windowMs | quote }}
+  RATE_LIMIT_MAX_REQUESTS: {{ .Values.config.rateLimiting.maxRequests | quote }}
+  
+  # CORS Configuration
+  CORS_ORIGIN: {{ .Values.config.cors.origin | quote }}
+  CORS_CREDENTIALS: {{ .Values.config.cors.credentials | quote }}
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "metrics-dashboard.fullname" . }}-nginx-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "metrics-dashboard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: nginx
+data:
+  nginx.conf: |
+    events {
+        worker_connections 1024;
+    }
+    
+    http {
+        include       /etc/nginx/mime.types;
+        default_type  application/octet-stream;
+        
+        # Security headers
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        
+        # Gzip compression
+        gzip on;
+        gzip_vary on;
+        gzip_min_length 1024;
+        gzip_types text/plain text/css text/xml text/javascript application/javascript application/xml+rss application/json;
+        
+        # Rate limiting
+        limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+        
+        server {
+            listen 80;
+            server_name _;
+            root /usr/share/nginx/html;
+            index index.html;
+            
+            # Security
+            server_tokens off;
+            
+            # Health check
+            location /health {
+                access_log off;
+                return 200 "healthy\n";
+                add_header Content-Type text/plain;
+            }
+            
+            # API proxy with rate limiting
+            location /api {
+                limit_req zone=api burst=20 nodelay;
+                proxy_pass http://127.0.0.1:3001;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection 'upgrade';
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                proxy_cache_bypass $http_upgrade;
+                proxy_read_timeout 300s;
+                proxy_connect_timeout 10s;
+            }
+            
+            # Frontend static files
+            location / {
+                try_files $uri $uri/ /index.html;
+                expires 1h;
+                add_header Cache-Control "public, must-revalidate";
+            }
+            
+            # Cache static assets
+            location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+                expires 1y;
+                add_header Cache-Control "public, immutable";
+            }
+        }
+    }

@@ -1,0 +1,278 @@
+# Default values for metrics-dashboard
+# This is a YAML-formatted file.
+
+# Global configuration
+global:
+  imageRegistry: "your-acr.azurecr.io"
+  imagePullSecrets: []
+  storageClass: "managed-csi"
+
+# Application configuration
+app:
+  name: metrics-dashboard
+  version: "1.0.0"
+  environment: production
+
+# Image configuration
+image:
+  frontend:
+    repository: metrics-dashboard-frontend
+    tag: "latest"
+    pullPolicy: Always
+  backend:
+    repository: metrics-dashboard-backend
+    tag: "latest"
+    pullPolicy: Always
+
+# Replica configuration
+replicaCount: 3
+maxReplicas: 10
+minReplicas: 3
+
+# Resource configuration
+resources:
+  frontend:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  backend:
+    requests:
+      memory: "256Mi"
+      cpu: "200m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+
+# Service configuration
+service:
+  type: ClusterIP
+  ports:
+    http: 80
+    api: 3001
+  annotations: {}
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: "nginx"  # or "azure/application-gateway"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+  hosts:
+    - host: metrics-dashboard.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          port: 80
+        - path: /api
+          pathType: Prefix
+          port: 3001
+  tls:
+    - secretName: metrics-dashboard-tls
+      hosts:
+        - metrics-dashboard.example.com
+
+# Azure-specific configuration
+azure:
+  # Azure Database for PostgreSQL
+  database:
+    enabled: true
+    host: "metrics-db-server.postgres.database.azure.com"
+    port: 5432
+    name: "metrics_dashboard"
+    user: "azureuser"
+    sslMode: "require"
+  
+  # Azure Key Vault
+  keyVault:
+    enabled: true
+    name: "metrics-kv"
+    tenantId: ""  # Your Azure Tenant ID
+    resourceGroup: "metrics-dashboard-rg"
+    subscriptionId: ""  # Your Azure Subscription ID
+  
+  # Azure Container Registry
+  acr:
+    name: "your-acr"
+    resourceGroup: "metrics-dashboard-rg"
+  
+  # Azure Monitor / Application Insights
+  monitoring:
+    enabled: true
+    applicationInsightsKey: ""
+    logAnalyticsWorkspaceId: ""
+
+# Security configuration
+security:
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+    runAsGroup: 1001
+    fsGroup: 1001
+    seccompProfile:
+      type: RuntimeDefault
+  
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+      add:
+        - NET_BIND_SERVICE
+
+# Storage configuration
+persistence:
+  enabled: true
+  logs:
+    size: 10Gi
+    storageClass: "managed-csi"
+    accessMode: ReadWriteOnce
+  tmp:
+    size: 5Gi
+    storageClass: "managed-csi"
+    accessMode: ReadWriteOnce
+  shared:
+    enabled: false
+    size: 5Gi
+    storageClass: "azurefile-csi"
+    accessMode: ReadWriteMany
+
+# Autoscaling configuration
+autoscaling:
+  enabled: true
+  hpa:
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  vpa:
+    enabled: false
+    updateMode: "Auto"
+
+# Health checks configuration
+healthChecks:
+  livenessProbe:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  startupProbe:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 30
+
+# Configuration from environment variables
+config:
+  nodeEnv: "production"
+  logLevel: "info"
+  jira:
+    syncIntervalHours: 2
+    autoSyncEnabled: true
+  jwt:
+    expiresIn: "24h"
+  cors:
+    origin: "https://metrics-dashboard.example.com"
+    credentials: true
+  rateLimiting:
+    windowMs: 900000  # 15 minutes
+    maxRequests: 100
+
+# Secrets configuration (managed by Azure Key Vault)
+secrets:
+  # These will be populated from Azure Key Vault
+  dbPassword: ""
+  jwtSecret: ""
+  jiraApiToken: ""
+  jiraEmail: ""
+  jiraBaseUrl: ""
+
+# Service Account configuration
+serviceAccount:
+  create: true
+  name: "metrics-dashboard-sa"
+  annotations:
+    azure.workload.identity/client-id: ""  # Azure Managed Identity Client ID
+    azure.workload.identity/tenant-id: ""  # Azure Tenant ID
+
+# RBAC configuration
+rbac:
+  create: true
+  clusterRole: false
+
+# Network policies
+networkPolicies:
+  enabled: true
+  ingressRules:
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            name: ingress-nginx
+      - podSelector:
+          matchLabels:
+            app: metrics-dashboard
+      ports:
+      - protocol: TCP
+        port: 80
+      - protocol: TCP
+        port: 3001
+
+# Monitoring configuration
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+  prometheusRule:
+    enabled: true
+  grafana:
+    enabled: true
+    dashboard:
+      enabled: true
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+# Node affinity and tolerations
+affinity:
+  podAntiAffinity:
+    enabled: true
+    type: "soft"  # or "hard"
+
+tolerations: []
+
+nodeSelector: {}
+
+# External dependencies
+postgresql:
+  enabled: false  # We use Azure Database for PostgreSQL
+
+redis:
+  enabled: false  # Optional caching layer
+
+# Custom labels and annotations
+labels: {}
+annotations: {}
+
+# Pod annotations
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "3001"
+  prometheus.io/path: "/metrics"
