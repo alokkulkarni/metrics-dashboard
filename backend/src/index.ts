@@ -16,8 +16,48 @@ const app = express();
 app.use(helmet());
 
 // CORS
+const getAllowedOrigins = () => {
+  const origins = [];
+  
+  // Add FRONTEND_URL
+  if (process.env.FRONTEND_URL) {
+    origins.push(process.env.FRONTEND_URL);
+  }
+  
+  // Add ALLOWED_ORIGINS (comma-separated)
+  if (process.env.ALLOWED_ORIGINS) {
+    origins.push(...process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim()));
+  }
+  
+  // Add localhost as fallback for development
+  if (process.env.NODE_ENV === 'development') {
+    origins.push('http://localhost:3000');
+  }
+  
+  return [...new Set(origins)]; // Remove duplicates
+};
+
+const allowedOrigins = getAllowedOrigins();
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    // Check if the origin is allowed
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    
+    // For development, also allow any devtunnels.ms origin
+    if (process.env.NODE_ENV === 'development' && origin.includes('devtunnels.ms')) {
+      return callback(null, true);
+    }
+    
+    logger.warn(`CORS blocked origin: ${origin}. Allowed origins: ${allowedOrigins.join(', ')}`);
+    const msg = 'The CORS policy for this site does not allow access from the specified origin.';
+    return callback(new Error(msg), false);
+  },
   credentials: true,
 }));
 
