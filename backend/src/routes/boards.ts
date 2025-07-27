@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { Request, Response } from 'express';
 import { Board } from '../models/Board';
+import { KanbanBoard } from '../models/KanbanBoard';
+import { KanbanMetrics } from '../models/KanbanMetrics';
 import { Project } from '../models/Project';
 import { Sprint } from '../models/Sprint';
 import { BoardMetrics } from '../models/BoardMetrics';
@@ -13,6 +15,8 @@ const router = Router();
 router.get('/stats', async (req: Request, res: Response) => {
   try {
     const totalBoards = await Board.count();
+    const totalKanbanBoards = await KanbanBoard.count();
+    
     const allBoards = await Board.findAll({
       attributes: ['type'],
       raw: true,
@@ -23,8 +27,15 @@ router.get('/stats', async (req: Request, res: Response) => {
       return acc;
     }, {});
 
+    // Add Kanban boards to the type breakdown
+    if (totalKanbanBoards > 0) {
+      byType['kanban'] = totalKanbanBoards;
+    }
+
     const stats = {
-      total: totalBoards,
+      total: totalBoards + totalKanbanBoards,
+      scrum: totalBoards,
+      kanban: totalKanbanBoards,
       byType,
     };
 
@@ -41,10 +52,11 @@ router.get('/stats', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/boards - Get all boards
+// GET /api/boards - Get all boards (both Scrum and Kanban)
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const boards = await Board.findAll({
+    // Fetch Scrum boards
+    const scrumBoards = await Board.findAll({
       include: [
         {
           model: Project,
@@ -62,11 +74,26 @@ router.get('/', async (req: Request, res: Response) => {
           required: false,
         },
       ],
-      order: [['name', 'ASC']],
     });
 
-    // Transform data to calculate isActive status based on sprint data
-    const boardsWithStatus = boards.map((board: any) => {
+    // Fetch Kanban boards with metrics
+    const kanbanBoards = await KanbanBoard.findAll({
+      include: [
+        {
+          model: Project,
+          as: 'project',
+          required: true,
+        },
+        {
+          model: KanbanMetrics,
+          as: 'metrics',
+          required: false,
+        },
+      ],
+    });
+
+    // Transform Scrum boards data to calculate isActive status based on sprint data
+    const scrumBoardsWithStatus = scrumBoards.map((board: any) => {
       const sprints = board.sprints || [];
       const activeSprints = sprints.filter((sprint: any) => sprint.state === 'active').length;
       
@@ -75,12 +102,29 @@ router.get('/', async (req: Request, res: Response) => {
         isActive: activeSprints > 0,
         activeSprintCount: activeSprints,
         totalSprintCount: sprints.length,
+        boardType: 'scrum',
       };
     });
 
+    // Transform Kanban boards data (always active, no sprints)
+    const kanbanBoardsWithStatus = kanbanBoards.map((board: any) => {
+      return {
+        ...board.toJSON(),
+        isActive: true, // Kanban boards are continuous flow, always active
+        activeSprintCount: 0,
+        totalSprintCount: 0,
+        sprints: [], // Add empty sprints array for consistency
+        boardType: 'kanban',
+      };
+    });
+
+    // Combine both types of boards and sort by name
+    const allBoards = [...scrumBoardsWithStatus, ...kanbanBoardsWithStatus];
+    allBoards.sort((a, b) => a.name.localeCompare(b.name));
+
     res.json({
       success: true,
-      data: boardsWithStatus,
+      data: allBoards,
     });
   } catch (error) {
     logger.error('Failed to fetch boards:', error);

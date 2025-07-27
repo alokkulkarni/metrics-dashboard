@@ -3,7 +3,7 @@ import { getSequelizeInstance } from '../database/connection';
 
 interface SyncOperationAttributes {
   id: number;
-  syncType: 'full' | 'project' | 'board' | 'sprint' | 'issue';
+  syncType: 'full' | 'project' | 'board' | 'sprint' | 'issue' | 'kanban';
   startTime: Date;
   endTime?: Date;
   status: 'running' | 'completed' | 'failed';
@@ -16,6 +16,9 @@ interface SyncOperationAttributes {
     sprints?: number;
     issues?: number;
     metrics?: number;
+    kanbanBoards?: number;
+    kanbanIssues?: number;
+    kanbanMetrics?: number;
     errors?: string[];
   };
   error?: string;
@@ -27,7 +30,7 @@ interface SyncOperationCreationAttributes extends Optional<SyncOperationAttribut
 
 class SyncOperation extends Model<SyncOperationAttributes, SyncOperationCreationAttributes> implements SyncOperationAttributes {
   public id!: number;
-  public syncType!: 'full' | 'project' | 'board' | 'sprint' | 'issue';
+  public syncType!: 'full' | 'project' | 'board' | 'sprint' | 'issue' | 'kanban';
   public startTime!: Date;
   public endTime?: Date;
   public status!: 'running' | 'completed' | 'failed';
@@ -40,6 +43,9 @@ class SyncOperation extends Model<SyncOperationAttributes, SyncOperationCreation
     sprints?: number;
     issues?: number;
     metrics?: number;
+    kanbanBoards?: number;
+    kanbanIssues?: number;
+    kanbanMetrics?: number;
     errors?: string[];
   };
   public error?: string;
@@ -97,7 +103,7 @@ class SyncOperation extends Model<SyncOperationAttributes, SyncOperationCreation
   }
 
   // Static method to create a new sync operation
-  public static async startSync(syncType: 'full' | 'project' | 'board' | 'sprint' | 'issue', options: {
+  public static async startSync(syncType: 'full' | 'project' | 'board' | 'sprint' | 'issue' | 'kanban', options: {
     projectKeys?: string[];
     boardIds?: number[];
     sprintIds?: number[];
@@ -119,6 +125,9 @@ class SyncOperation extends Model<SyncOperationAttributes, SyncOperationCreation
     sprints?: number;
     issues?: number;
     metrics?: number;
+    kanbanBoards?: number;
+    kanbanIssues?: number;
+    kanbanMetrics?: number;
     errors?: string[];
   }): Promise<void> {
     this.endTime = new Date();
@@ -144,7 +153,7 @@ class SyncOperation extends Model<SyncOperationAttributes, SyncOperationCreation
           primaryKey: true,
         },
         syncType: {
-          type: DataTypes.ENUM('full', 'project', 'board', 'sprint', 'issue'),
+          type: DataTypes.ENUM('full', 'project', 'board', 'sprint', 'issue', 'kanban'),
           allowNull: false,
           field: 'sync_type', // Map camelCase to snake_case
         },

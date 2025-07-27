@@ -10,6 +10,9 @@ import { Issue } from '../models/Issue';
 import { SprintMetrics } from '../models/SprintMetrics';
 import { BoardMetrics } from '../models/BoardMetrics';
 import { SyncOperation } from '../models/SyncOperation';
+import { KanbanBoard } from '../models/KanbanBoard';
+import { KanbanIssue } from '../models/KanbanIssue';
+import { KanbanMetrics } from '../models/KanbanMetrics';
 import { MigrationRunner } from './migrationRunner';
 
 export let sequelize: Sequelize;
@@ -70,6 +73,12 @@ async function initializeModels(): Promise<void> {
   BoardMetrics.initialize(sequelize);
   logger.debug('Initializing SyncOperation model...');
   SyncOperation.initialize(sequelize);
+  logger.debug('Initializing KanbanBoard model...');
+  KanbanBoard.initialize(sequelize);
+  logger.debug('Initializing KanbanIssue model...');
+  KanbanIssue.initialize(sequelize);
+  logger.debug('Initializing KanbanMetrics model...');
+  KanbanMetrics.initialize(sequelize);
 
   // Define associations
   defineAssociations();
@@ -95,6 +104,19 @@ function defineAssociations(): void {
   // Board -> BoardMetrics (one-to-one)
   Board.hasOne(BoardMetrics, { foreignKey: 'boardId', as: 'metrics' });
   BoardMetrics.belongsTo(Board, { foreignKey: 'boardId', as: 'board' });
+
+  // Kanban associations
+  // Project -> KanbanBoard (one-to-many)
+  Project.hasMany(KanbanBoard, { foreignKey: 'projectId', as: 'kanbanBoards' });
+  KanbanBoard.belongsTo(Project, { foreignKey: 'projectId', as: 'project' });
+
+  // KanbanBoard -> KanbanIssue (one-to-many)
+  KanbanBoard.hasMany(KanbanIssue, { foreignKey: 'kanbanBoardId', as: 'issues' });
+  KanbanIssue.belongsTo(KanbanBoard, { foreignKey: 'kanbanBoardId', as: 'kanbanBoard' });
+
+  // KanbanBoard -> KanbanMetrics (one-to-one)
+  KanbanBoard.hasOne(KanbanMetrics, { foreignKey: 'kanbanBoardId', as: 'metrics' });
+  KanbanMetrics.belongsTo(KanbanBoard, { foreignKey: 'kanbanBoardId', as: 'kanbanBoard' });
 }
 
 export function getSequelizeInstance(): Sequelize | null {

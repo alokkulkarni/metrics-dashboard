@@ -1,17 +1,21 @@
 import React from 'react'
-import { Link } from 'react-router-dom'
-import { BarChart3, TrendingUp, Users, Clock, RefreshCw, AlertCircle, Calculator, Timer, Zap } from 'lucide-react'
+import { BarChart3, TrendingUp, Users, Clock, RefreshCw, AlertCircle, Calculator, Timer, Zap, Activity, Target, GitBranch } from 'lucide-react'
 import { useBoardStats, useBoards, useSyncBoards, useCalculateAllMetrics } from '../hooks/useBoards'
 import { useAllBoardsSummary } from '../hooks/useMetrics'
+import { useKanbanMetricsSummary, useCalculateAllKanbanMetrics, useKanbanMetrics } from '../hooks/useKanbanMetrics'
 import MetricCard from '../components/MetricCard'
 import LoadingSpinner from '../components/LoadingSpinner'
+import BoardPerformanceTable from '../components/BoardPerformanceTable'
 
 const Dashboard: React.FC = () => {
   const { data: boardStats, isLoading: statsLoading, error: statsError } = useBoardStats()
   const { data: boards, isLoading: boardsLoading, error: boardsError } = useBoards()
   const { data: boardsSummary, isLoading: summaryLoading, error: summaryError } = useAllBoardsSummary()
+  const { data: kanbanSummary, isLoading: kanbanSummaryLoading, error: kanbanSummaryError } = useKanbanMetricsSummary()
+  const { data: kanbanMetrics, isLoading: kanbanMetricsLoading, error: kanbanMetricsError } = useKanbanMetrics()
   const { mutate: syncBoards, isPending: syncPending } = useSyncBoards()
   const { mutate: calculateMetrics, isPending: calculatingMetrics } = useCalculateAllMetrics()
+  const { mutate: calculateKanbanMetrics, isPending: calculatingKanbanMetrics } = useCalculateAllKanbanMetrics()
 
   // Track if we've already auto-synced to prevent duplicates
   const autoSyncedRef = React.useRef(false)
@@ -57,11 +61,11 @@ const Dashboard: React.FC = () => {
     }
   }, [calculateMetrics, calculatingMetrics, summaryLoading, shouldCalculateMetrics])
 
-  const isLoading = statsLoading || boardsLoading || summaryLoading
-  const hasError = statsError || boardsError || summaryError
+  const isLoading = statsLoading || boardsLoading || summaryLoading || kanbanSummaryLoading || kanbanMetricsLoading
+  const hasError = statsError || boardsError || summaryError || kanbanSummaryError || kanbanMetricsError
 
-  // Calculate aggregate metrics
-  const aggregateMetrics = React.useMemo(() => {
+  // Calculate Scrum aggregate metrics
+  const scrumAggregateMetrics = React.useMemo(() => {
     if (!boardsSummary || !Array.isArray(boardsSummary)) return null
 
     const totalSprints = boardsSummary.reduce((sum, item) => {
@@ -91,6 +95,16 @@ const Dashboard: React.FC = () => {
         }, 0) / boardsSummary.length 
       : 0
 
+    // Calculate average churn rate
+    const boardsWithChurnRate = boardsSummary.filter(item => 
+      item.metrics?.averageChurnRate !== undefined && parseFloat(item.metrics.averageChurnRate) >= 0
+    )
+    const averageChurnRate = boardsWithChurnRate.length > 0 
+      ? boardsWithChurnRate.reduce((sum, item) => {
+          return sum + parseFloat(item.metrics?.averageChurnRate || '0')
+        }, 0) / boardsWithChurnRate.length 
+      : 0
+
     // Calculate cycle time and lead time averages
     const boardsWithCycleTime = boardsSummary.filter(item => 
       item.metrics?.averageCycleTime && parseFloat(item.metrics.averageCycleTime) > 0
@@ -117,10 +131,27 @@ const Dashboard: React.FC = () => {
       averageVelocity: Math.round(averageVelocity * 10) / 10,
       totalStoryPoints: Math.round(totalStoryPoints * 10) / 10,
       completionRate: Math.round(averageCompletionRate * 10) / 10,
+      averageChurnRate: Math.round(averageChurnRate * 10) / 10,
       averageCycleTime: Math.round(averageCycleTime * 10) / 10,
       averageLeadTime: Math.round(averageLeadTime * 10) / 10,
     }
   }, [boardsSummary])
+
+    // Calculate Kanban aggregate metrics
+  const kanbanAggregateMetrics = React.useMemo(() => {
+    if (!kanbanSummary) return null
+
+    return {
+      totalBoards: kanbanSummary.totalBoards || 0,
+      totalIssues: kanbanSummary.totalIssues || 0,
+      averageCycleTime: kanbanSummary.averageCycleTime ? Math.round(kanbanSummary.averageCycleTime * 10) / 10 : undefined,
+      averageLeadTime: kanbanSummary.averageLeadTime ? Math.round(kanbanSummary.averageLeadTime * 10) / 10 : undefined,
+      totalWipViolations: kanbanSummary.totalWipViolations || 0,
+      averageFlowEfficiency: kanbanSummary.averageFlowEfficiency ? Math.round(kanbanSummary.averageFlowEfficiency * 10) / 10 : undefined,
+      totalThroughput: kanbanSummary.totalWeeklyThroughput || 0,
+      averageThroughput: kanbanSummary.averageThroughput ? Math.round(kanbanSummary.averageThroughput * 10) / 10 : undefined,
+    }
+  }, [kanbanSummary])
 
   const handleSync = () => {
     syncBoards()
@@ -128,6 +159,10 @@ const Dashboard: React.FC = () => {
 
   const handleCalculateMetrics = () => {
     calculateMetrics()
+  }
+
+  const handleCalculateKanbanMetrics = () => {
+    calculateKanbanMetrics()
   }
 
   if (isLoading) {
@@ -154,7 +189,15 @@ const Dashboard: React.FC = () => {
               className="bg-green-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 hover:bg-green-700 disabled:opacity-50"
             >
               <Calculator className={`h-4 w-4 ${calculatingMetrics ? 'animate-pulse' : ''}`} />
-              <span>{calculatingMetrics ? 'Calculating...' : 'Calculate Metrics'}</span>
+              <span>{calculatingMetrics ? 'Calculating...' : 'Calculate Scrum Metrics'}</span>
+            </button>
+            <button
+              onClick={handleCalculateKanbanMetrics}
+              disabled={calculatingKanbanMetrics}
+              className="bg-purple-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 hover:bg-purple-700 disabled:opacity-50"
+            >
+              <Activity className={`h-4 w-4 ${calculatingKanbanMetrics ? 'animate-pulse' : ''}`} />
+              <span>{calculatingKanbanMetrics ? 'Calculating...' : 'Calculate Kanban Metrics'}</span>
             </button>
             <button
               onClick={handleSync}
@@ -241,7 +284,15 @@ const Dashboard: React.FC = () => {
             className="bg-green-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 hover:bg-green-700 disabled:opacity-50"
           >
             <Calculator className={`h-4 w-4 ${calculatingMetrics ? 'animate-pulse' : ''}`} />
-            <span>{calculatingMetrics ? 'Calculating...' : 'Calculate Metrics'}</span>
+            <span>{calculatingMetrics ? 'Calculating...' : 'Calculate Scrum Metrics'}</span>
+          </button>
+          <button
+            onClick={handleCalculateKanbanMetrics}
+            disabled={calculatingKanbanMetrics}
+            className="bg-purple-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 hover:bg-purple-700 disabled:opacity-50"
+          >
+            <Activity className={`h-4 w-4 ${calculatingKanbanMetrics ? 'animate-pulse' : ''}`} />
+            <span>{calculatingKanbanMetrics ? 'Calculating...' : 'Calculate Kanban Metrics'}</span>
           </button>
           <button
             onClick={handleSync}
@@ -254,8 +305,8 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Metrics Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6">
+      {/* Overall Board Statistics */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <MetricCard
           title="Total Boards"
           value={boardStats?.total || 0}
@@ -263,38 +314,20 @@ const Dashboard: React.FC = () => {
           metricKey="totalBoards"
         />
         <MetricCard
-          title="Active Sprints"
-          value={aggregateMetrics?.totalSprints || 0}
+          title="Scrum Boards"
+          value={boardStats?.scrum || 0}
           icon={<TrendingUp className="h-6 w-6" />}
-          metricKey="activeSprints"
+          metricKey="totalBoards"
         />
         <MetricCard
-          title="Average Velocity"
-          value={aggregateMetrics?.averageVelocity || 0}
-          icon={<Users className="h-6 w-6" />}
-          metricKey="averageVelocity"
-        />
-        <MetricCard
-          title="Completion Rate"
-          value={`${aggregateMetrics?.completionRate || 0}%`}
-          icon={<Clock className="h-6 w-6" />}
-          metricKey="averageCompletionRate"
-        />
-        <MetricCard
-          title="Cycle Time"
-          value={aggregateMetrics?.averageCycleTime ? `${aggregateMetrics.averageCycleTime} days` : 'N/A'}
-          icon={<Timer className="h-6 w-6" />}
-          metricKey="averageCycleTime"
-        />
-        <MetricCard
-          title="Lead Time"
-          value={aggregateMetrics?.averageLeadTime ? `${aggregateMetrics.averageLeadTime} days` : 'N/A'}
-          icon={<Zap className="h-6 w-6" />}
-          metricKey="averageLeadTime"
+          title="Kanban Boards"
+          value={boardStats?.kanban || 0}
+          icon={<GitBranch className="h-6 w-6" />}
+          metricKey="totalBoards"
         />
       </div>
 
-      {/* Board Types */}
+      {/* Boards by Type */}
       {boardStats?.byType && Object.keys(boardStats.byType).length > 0 && (
         <div className="bg-white p-6 rounded-lg shadow border">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Boards by Type</h2>
@@ -309,143 +342,123 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Board Performance Summary */}
-      {boardsSummary && boardsSummary.length > 0 && (
+      {/* Scrum Boards Section */}
+      {scrumAggregateMetrics && scrumAggregateMetrics.totalBoards > 0 && (
         <div className="bg-white p-6 rounded-lg shadow border">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Board Performance Summary</h2>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Board
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Project
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Sprints
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Avg Velocity
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Cycle Time
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Lead Time
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {boardsSummary
-                  .sort((a, b) => {
-                    // First sort by active status (active boards first)
-                    const aIsActive = (a.counts?.activeSprints || 0) > 0;
-                    const bIsActive = (b.counts?.activeSprints || 0) > 0;
-                    
-                    if (aIsActive !== bIsActive) {
-                      return bIsActive ? 1 : -1; // Active boards first
-                    }
-                    
-                    // For active boards with multiple sprints, sort by the most recent sprint start date
-                    if (aIsActive && bIsActive && a.activeSprints && b.activeSprints) {
-                      // Get the most recent sprint start date for each board
-                      const aLatestSprint = a.activeSprints[0]; // Already sorted by backend
-                      const bLatestSprint = b.activeSprints[0]; // Already sorted by backend
-                      
-                      if (aLatestSprint && bLatestSprint) {
-                        const aStartDate = aLatestSprint.startDate ? new Date(aLatestSprint.startDate).getTime() : 0;
-                        const bStartDate = bLatestSprint.startDate ? new Date(bLatestSprint.startDate).getTime() : 0;
-                        
-                        if (aStartDate !== bStartDate) {
-                          return bStartDate - aStartDate; // Most recent start date first
-                        }
-                        
-                        // If start dates are same, sort by end date
-                        const aEndDate = aLatestSprint.endDate ? new Date(aLatestSprint.endDate).getTime() : 0;
-                        const bEndDate = bLatestSprint.endDate ? new Date(bLatestSprint.endDate).getTime() : 0;
-                        
-                        if (aEndDate !== bEndDate) {
-                          return aEndDate - bEndDate; // Earliest end date first
-                        }
-                      }
-                    }
-                    
-                    // Then sort by project key
-                    const aProjectKey = a.board.projectKey || '';
-                    const bProjectKey = b.board.projectKey || '';
-                    
-                    if (aProjectKey !== bProjectKey) {
-                      return aProjectKey.localeCompare(bProjectKey);
-                    }
-                    
-                    // Finally sort by board name within the same project
-                    return (a.board.name || '').localeCompare(b.board.name || '');
-                  })
-                  .map((item) => {
-                  const isActive = (item.counts?.activeSprints || 0) > 0;
-                  return (
-                    <tr key={item.board.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <Link 
-                          to={`/boards/${item.board.id}`}
-                          className="text-blue-600 hover:text-blue-800 font-medium"
-                        >
-                          {item.board.name}
-                        </Link>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        <div>
-                          <div className="font-medium">{item.board.projectKey}</div>
-                          <div className="text-gray-500 text-xs">{item.board.projectName}</div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span 
-                          className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                            isActive 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-gray-100 text-gray-800'
-                          }`}
-                        >
-                          {isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        <div>
-                          <div className="font-medium">{item.counts?.totalSprints || 0}</div>
-                          <div className="text-gray-500 text-xs">
-                            {item.counts?.activeSprints || 0} active, {item.counts?.completedSprints || 0} completed
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {parseFloat(item.metrics?.averageVelocity || '0').toFixed(1)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {item.metrics?.averageCycleTime 
-                          ? `${parseFloat(item.metrics.averageCycleTime).toFixed(1)} days`
-                          : 'N/A'
-                        }
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {item.metrics?.averageLeadTime 
-                          ? `${parseFloat(item.metrics.averageLeadTime).toFixed(1)} days`
-                          : 'N/A'
-                        }
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Scrum Boards - Aggregate Metrics</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-6">
+            <MetricCard
+              title="Total Boards"
+              value={scrumAggregateMetrics.totalBoards}
+              icon={<BarChart3 className="h-6 w-6" />}
+              metricKey="totalBoards"
+            />
+            <MetricCard
+              title="Active Sprints"
+              value={scrumAggregateMetrics.totalSprints}
+              icon={<TrendingUp className="h-6 w-6" />}
+              metricKey="activeSprints"
+            />
+            <MetricCard
+              title="Average Velocity"
+              value={scrumAggregateMetrics.averageVelocity}
+              icon={<Users className="h-6 w-6" />}
+              metricKey="averageVelocity"
+            />
+            <MetricCard
+              title="Completion Rate"
+              value={`${scrumAggregateMetrics.completionRate}%`}
+              icon={<Clock className="h-6 w-6" />}
+              metricKey="averageCompletionRate"
+            />
+            <MetricCard
+              title="Average Churn Rate"
+              value={`${scrumAggregateMetrics.averageChurnRate}%`}
+              icon={<RefreshCw className="h-6 w-6" />}
+              metricKey="averageChurnRate"
+            />
+            <MetricCard
+              title="Average Cycle Time"
+              value={scrumAggregateMetrics.averageCycleTime ? `${scrumAggregateMetrics.averageCycleTime} days` : 'N/A'}
+              icon={<Timer className="h-6 w-6" />}
+              metricKey="averageCycleTime"
+            />
+            <MetricCard
+              title="Average Lead Time"
+              value={scrumAggregateMetrics.averageLeadTime ? `${scrumAggregateMetrics.averageLeadTime} days` : 'N/A'}
+              icon={<Zap className="h-6 w-6" />}
+              metricKey="averageLeadTime"
+            />
           </div>
         </div>
       )}
+
+      {/* Kanban Boards Section */}
+      {kanbanAggregateMetrics && kanbanAggregateMetrics.totalBoards > 0 && (
+        <div className="bg-white p-6 rounded-lg shadow border">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Kanban Boards - Aggregate Metrics</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+            <MetricCard
+              title="Total Boards"
+              value={kanbanAggregateMetrics.totalBoards}
+              icon={<GitBranch className="h-6 w-6" />}
+              metricKey="totalBoards"
+            />
+            <MetricCard
+              title="Total Issues"
+              value={kanbanAggregateMetrics.totalIssues}
+              icon={<Target className="h-6 w-6" />}
+              metricKey="issues"
+            />
+            <MetricCard
+              title="Average Cycle Time"
+              value={kanbanAggregateMetrics.averageCycleTime ? `${kanbanAggregateMetrics.averageCycleTime} days` : 'N/A'}
+              icon={<Timer className="h-6 w-6" />}
+              metricKey="cycleTime"
+            />
+            <MetricCard
+              title="Average Lead Time"
+              value={kanbanAggregateMetrics.averageLeadTime ? `${kanbanAggregateMetrics.averageLeadTime} days` : 'N/A'}
+              icon={<Zap className="h-6 w-6" />}
+              metricKey="leadTime"
+            />
+            <MetricCard
+              title="WIP Violations"
+              value={kanbanAggregateMetrics.totalWipViolations}
+              icon={<AlertCircle className="h-6 w-6" />}
+              metricKey="wipViolations"
+            />
+          </div>
+          
+          {/* Additional Kanban Metrics Row */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-4">
+            <MetricCard
+              title="Avg Throughput"
+              value={kanbanAggregateMetrics.averageThroughput ? `${kanbanAggregateMetrics.averageThroughput}/week` : 'N/A'}
+              icon={<TrendingUp className="h-6 w-6" />}
+              metricKey="averageThroughput"
+            />
+            <MetricCard
+              title="Flow Efficiency"
+              value={kanbanAggregateMetrics.averageFlowEfficiency ? `${kanbanAggregateMetrics.averageFlowEfficiency}%` : 'N/A'}
+              icon={<Activity className="h-6 w-6" />}
+              metricKey="flowEfficiency"
+            />
+            <MetricCard
+              title="Total Throughput"
+              value={kanbanAggregateMetrics.totalThroughput}
+              icon={<Users className="h-6 w-6" />}
+              metricKey="throughput"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Board Performance Summary - Unified Table with Tabs */}
+      <BoardPerformanceTable 
+        scrumBoards={boardsSummary || []}
+        kanbanBoards={kanbanMetrics || []}
+      />
 
       {/* Empty State */}
       {!boards?.length && !boardsSummary?.length && !boardStats?.total && (

@@ -237,6 +237,11 @@ const ResourceSpread: React.FC = () => {
 
   const filteredAndSortedResources = resources
     .filter(resource => {
+      // Hide "Automation for jira" resource
+      if (resource.resourceName === 'Automation for jira') {
+        return false
+      }
+      
       // Name filter
       const nameMatch = resource.resourceName.toLowerCase().includes(filter.toLowerCase())
       
@@ -435,7 +440,7 @@ const ResourceSpread: React.FC = () => {
                   onClick={() => handleSort('sprints')}
                 >
                   <div className="flex items-center space-x-1">
-                    <span>Sprint Assignments</span>
+                    <span>Assignments</span>
                     <ArrowUpDown className="h-3 w-3" />
                   </div>
                 </th>
@@ -496,8 +501,8 @@ const ResourceSpread: React.FC = () => {
                   </td>
                   <td className="px-6 py-4">
                     <div className="space-y-2">
-                      {resource.sprints.length > 0 ? (
-                        resource.sprints.slice(0, 3).map((sprint) => (
+                      {resource.sprints.filter(sprint => sprint.state === 'active').length > 0 ? (
+                        resource.sprints.filter(sprint => sprint.state === 'active').map((sprint) => (
                           <div key={sprint.sprintId} className="border border-gray-200 rounded-lg p-3 bg-gray-50">
                             <div className="flex items-center justify-between mb-2">
                               <span className="text-sm font-medium text-gray-900">{sprint.sprintName}</span>
@@ -527,12 +532,7 @@ const ResourceSpread: React.FC = () => {
                           </div>
                         ))
                       ) : (
-                        <span className="text-sm text-gray-400">No sprint assignments</span>
-                      )}
-                      {resource.sprints.length > 3 && (
-                        <div className="text-xs text-gray-500 text-center py-2">
-                          +{resource.sprints.length - 3} more sprints
-                        </div>
+                        <span className="text-sm text-gray-400">No active sprint assignments</span>
                       )}
                     </div>
                   </td>

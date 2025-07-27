@@ -12,7 +12,10 @@ RUN npm install
 # Copy source code
 COPY . .
 
-# Build the application
+# Build arguments for environment variables
+ARG VITE_API_BASE_URL=http://localhost:3001
+
+# Build the application with environment variables
 RUN npm run build
 
 # Production stage

@@ -5,8 +5,10 @@ import { Sprint } from '../models/Sprint';
 import { Issue } from '../models/Issue';
 import { SprintMetrics } from '../models/SprintMetrics';
 import { SyncOperation } from '../models/SyncOperation';
+import { KanbanBoard } from '../models/KanbanBoard';
 import { jiraService } from './jiraService';
 import { MetricsCalculationService } from './MetricsCalculationService';
+import { kanbanSyncService } from './kanbanSyncService';
 
 interface SyncOptions {
   forceSync?: boolean;
@@ -22,6 +24,9 @@ interface SyncResult {
   sprints: number;
   issues: number;
   metrics: number;
+  kanbanBoards: number;
+  kanbanIssues: number;
+  kanbanMetrics: number;
   errors: string[];
   throttled?: boolean;
   throttleMessage?: string;
@@ -39,6 +44,9 @@ class SyncService {
       sprints: 0,
       issues: 0,
       metrics: 0,
+      kanbanBoards: 0,
+      kanbanIssues: 0,
+      kanbanMetrics: 0,
       errors: [],
     };
 
@@ -90,6 +98,7 @@ class SyncService {
         // Sync boards
         const boardsResult = await this.syncBoards(options);
         result.boards = boardsResult.synced;
+        result.kanbanBoards = boardsResult.kanbanBoards; // Set kanbanBoards count from integrated sync
         result.errors.push(...boardsResult.errors);
 
         // Sync sprints
@@ -107,12 +116,26 @@ class SyncService {
         result.metrics = metricsResult.calculated;
         result.errors.push(...metricsResult.errors);
 
+        // Sync Kanban issues (boards already synced in syncBoards step)
+        logger.info('Syncing Kanban issues...');
+        const kanbanIssuesResult = await this.syncKanbanIssues(options);
+        result.kanbanIssues = kanbanIssuesResult.synced;
+        result.errors.push(...kanbanIssuesResult.errors);
+
+        // Calculate Kanban metrics
+        logger.info('Calculating Kanban metrics...');
+        const kanbanMetricsResult = await this.calculateKanbanMetrics();
+        result.kanbanMetrics = kanbanMetricsResult.calculated;
+        result.errors.push(...kanbanMetricsResult.errors);
+
         logger.info('Full sync process completed', {
           projects: result.projects,
           boards: result.boards,
           sprints: result.sprints,
           issues: result.issues,
           metrics: result.metrics,
+          kanbanIssues: result.kanbanIssues,
+          kanbanMetrics: result.kanbanMetrics,
           errors: result.errors.length,
         });
 
@@ -178,31 +201,45 @@ class SyncService {
     }
   }
 
-  private async syncBoards(options: SyncOptions): Promise<{ synced: number; errors: string[] }> {
-    const result = { synced: 0, errors: [] as string[] };
+  private async syncBoards(options: SyncOptions): Promise<{ synced: number; scrumBoards: number; kanbanBoards: number; errors: string[] }> {
+    const result = { synced: 0, scrumBoards: 0, kanbanBoards: 0, errors: [] as string[] };
 
     try {
-      logger.info('Syncing boards...');
+      logger.info('Syncing boards (both Scrum and Kanban)...');
 
       // Get all boards directly instead of filtering by project to avoid missing boards
       // that don't appear in project-specific queries due to JIRA API inconsistencies
       const jiraBoards = await jiraService.getAllBoards();
       logger.info(`Fetched ${jiraBoards.length} total boards from JIRA`);
 
+      // Also get Kanban boards specifically to ensure we don't miss any
+      const jiraKanbanBoards = await jiraService.getAllKanbanBoards();
+      logger.info(`Fetched ${jiraKanbanBoards.length} Kanban boards from JIRA`);
+
+      // Combine and deduplicate boards by ID
+      const allJiraBoards = [...jiraBoards];
+      for (const kanbanBoard of jiraKanbanBoards) {
+        if (!allJiraBoards.find(board => board.id === kanbanBoard.id)) {
+          allJiraBoards.push(kanbanBoard);
+        }
+      }
+
+      logger.info(`Processing ${allJiraBoards.length} total unique boards (${jiraBoards.length} from general API + ${jiraKanbanBoards.length} Kanban-specific)`);
+
       // Create a map of project keys to project IDs for efficient lookup
       const projects = await Project.findAll();
       const projectMap = new Map(projects.map(p => [p.jiraProjectKey, p]));
       
-      for (const jiraBoard of jiraBoards) {
+      for (const jiraBoard of allJiraBoards) {
         try {
           // Filter by board IDs if specified
           if (options.boardIds && !options.boardIds.includes(jiraBoard.id)) {
             continue;
           }
 
-          // Only sync scrum boards and boards with valid project associations
-          if (jiraBoard.type !== 'scrum' || !jiraBoard.location?.projectKey) {
-            logger.debug(`Skipping board ${jiraBoard.id} - type: ${jiraBoard.type}, project: ${jiraBoard.location?.projectKey}`);
+          // Skip boards without valid project associations
+          if (!jiraBoard.location?.projectKey) {
+            logger.debug(`Skipping board ${jiraBoard.id} - no project key available`);
             continue;
           }
 
@@ -213,17 +250,40 @@ class SyncService {
             continue;
           }
 
-          const board = await Board.upsert({
-            jiraBoardId: jiraBoard.id,
-            name: jiraBoard.name,
-            type: jiraBoard.type,
-            projectId: project.id,
-            location: jiraBoard.location?.projectName || null,
-            canEdit: jiraBoard.canEdit,
-          });
+          // Handle both Scrum and Kanban boards
+          if (jiraBoard.type === 'scrum') {
+            // Sync to Scrum boards table
+            const board = await Board.upsert({
+              jiraBoardId: jiraBoard.id,
+              name: jiraBoard.name,
+              type: jiraBoard.type,
+              projectId: project.id,
+              location: jiraBoard.location?.projectName || null,
+              canEdit: jiraBoard.canEdit,
+            });
+
+            result.scrumBoards++;
+            logger.debug(`Synced Scrum board: ${jiraBoard.id} - ${jiraBoard.name} (project: ${jiraBoard.location.projectKey})`);
+          } else if (jiraBoard.type === 'kanban') {
+            // Sync to Kanban boards table using kanbanSyncService logic
+            const kanbanBoard = await KanbanBoard.upsert({
+              jiraBoardId: jiraBoard.id,
+              name: jiraBoard.name,
+              type: jiraBoard.type || 'kanban',
+              projectId: project.id,
+              location: jiraBoard.location?.projectName || null,
+              canEdit: jiraBoard.canEdit || false,
+              lastSyncAt: new Date(),
+            });
+
+            result.kanbanBoards++;
+            logger.debug(`Synced Kanban board: ${jiraBoard.id} - ${jiraBoard.name} (project: ${jiraBoard.location.projectKey})`);
+          } else {
+            logger.debug(`Skipping board ${jiraBoard.id} - unsupported type: ${jiraBoard.type}`);
+            continue;
+          }
 
           result.synced++;
-          logger.debug(`Synced board: ${jiraBoard.id} - ${jiraBoard.name} (project: ${jiraBoard.location.projectKey})`);
         } catch (error) {
           const errorMsg = `Failed to sync board ${jiraBoard.id}: ${error}`;
           logger.error(errorMsg);
@@ -231,7 +291,7 @@ class SyncService {
         }
       }
 
-      logger.info(`Boards sync completed: ${result.synced} synced, ${result.errors.length} errors`);
+      logger.info(`Boards sync completed: ${result.synced} total synced (${result.scrumBoards} Scrum, ${result.kanbanBoards} Kanban), ${result.errors.length} errors`);
       return result;
     } catch (error) {
       logger.error('Failed to sync boards:', error);
@@ -578,6 +638,130 @@ class SyncService {
     }
   }
 
+  private async syncKanbanIssues(options: SyncOptions): Promise<{ synced: number; errors: string[] }> {
+    const result = { synced: 0, errors: [] as string[] };
+
+    try {
+      logger.info('Syncing Kanban issues...');
+
+      // Get all Kanban boards to sync issues for
+      let kanbanBoards;
+      
+      if (options.boardIds && options.boardIds.length > 0) {
+        kanbanBoards = await KanbanBoard.findAll({
+          where: { jiraBoardId: options.boardIds }
+        });
+        logger.info(`Syncing Kanban issues for ${kanbanBoards.length} specified boards: ${options.boardIds.join(', ')}`);
+      } else {
+        const whereClause: any = {};
+        if (options.projectKeys && options.projectKeys.length > 0) {
+          const projects = await Project.findAll({
+            where: { jiraProjectKey: options.projectKeys }
+          });
+          const projectIds = projects.map(p => p.id);
+          whereClause.projectId = projectIds;
+          logger.info(`Syncing Kanban issues for projects: ${options.projectKeys.join(', ')}`);
+        }
+        kanbanBoards = await KanbanBoard.findAll({ where: whereClause });
+        logger.info(`Syncing Kanban issues for all ${kanbanBoards.length} Kanban boards`);
+      }
+
+      for (const kanbanBoard of kanbanBoards) {
+        try {
+          logger.debug(`Syncing issues for Kanban board: ${kanbanBoard.name} (${kanbanBoard.jiraBoardId})`);
+
+          const jiraIssues = await jiraService.getIssuesForKanbanBoard(kanbanBoard.jiraBoardId);
+          
+          for (const jiraIssue of jiraIssues) {
+            try {
+              // Extract status category
+              const statusCategory = (jiraIssue.fields.status as any)?.statusCategory?.name || 
+                                   jiraIssue.fields.status?.name || 
+                                   'Unknown';
+
+              // Import KanbanIssue for upsert operation
+              const { KanbanIssue } = await import('../models/KanbanIssue');
+
+              const [kanbanIssue, created] = await KanbanIssue.upsert({
+                jiraId: jiraIssue.id,
+                key: jiraIssue.key,
+                kanbanBoardId: kanbanBoard.id,
+                summary: jiraIssue.fields.summary,
+                description: jiraIssue.fields.description || undefined,
+                issueType: jiraIssue.fields.issuetype.name,
+                status: jiraIssue.fields.status.name,
+                statusCategory: statusCategory,
+                priority: jiraIssue.fields.priority.name,
+                assigneeId: jiraIssue.fields.assignee?.accountId || undefined,
+                assigneeName: jiraIssue.fields.assignee?.displayName || undefined,
+                reporterId: jiraIssue.fields.reporter?.accountId || undefined,
+                reporterName: jiraIssue.fields.reporter?.displayName || undefined,
+                storyPoints: jiraIssue.fields.customfield_10030 || undefined,
+                created: new Date(jiraIssue.fields.created),
+                updated: new Date(jiraIssue.fields.updated),
+                resolved: jiraIssue.fields.resolutiondate ? new Date(jiraIssue.fields.resolutiondate) : undefined,
+                parentId: jiraIssue.fields.parent?.id || undefined,
+                parentKey: jiraIssue.fields.parent?.key || undefined,
+                labels: jiraIssue.fields.labels || [],
+                components: jiraIssue.fields.components?.map((c: any) => c.name) || [],
+                fixVersions: jiraIssue.fields.fixVersions?.map((v: any) => v.name) || [],
+                columnId: undefined, // Will be populated if we fetch board details
+                columnName: undefined,
+                swimlaneId: undefined,
+                swimlaneName: undefined,
+                rank: undefined,
+                flagged: false,
+                blockedReason: undefined,
+                lastSyncAt: new Date(),
+              }, {
+                returning: true,
+              });
+
+              result.synced++;
+              logger.debug(`Synced Kanban issue: ${jiraIssue.key} - ${jiraIssue.fields.summary}`);
+
+            } catch (error) {
+              const errorMessage = `Failed to sync Kanban issue ${jiraIssue.key}: ${error}`;
+              logger.error(errorMessage);
+              result.errors.push(errorMessage);
+            }
+          }
+
+          // Update board's last sync time
+          await kanbanBoard.update({ lastSyncAt: new Date() });
+
+        } catch (error) {
+          const errorMessage = `Failed to sync issues for Kanban board ${kanbanBoard.name}: ${error}`;
+          logger.error(errorMessage);
+          result.errors.push(errorMessage);
+        }
+      }
+
+      logger.info(`Kanban issues sync completed: ${result.synced} synced, ${result.errors.length} errors`);
+      return result;
+
+    } catch (error) {
+      logger.error('Failed to sync Kanban issues:', error);
+      result.errors.push(`Kanban issues sync failed: ${error}`);
+      return result;
+    }
+  }
+
+  private async calculateKanbanMetrics(): Promise<{ calculated: number; errors: string[] }> {
+    try {
+      logger.info('Calculating Kanban metrics...');
+      
+      // Use the kanbanSyncService's public calculation method
+      const result = await kanbanSyncService.calculateMetricsOnly();
+      
+      logger.info(`Kanban metrics calculation completed: ${result.calculated} calculated, ${result.errors.length} errors`);
+      return result;
+    } catch (error) {
+      logger.error('Failed to calculate Kanban metrics:', error);
+      return { calculated: 0, errors: [`Kanban metrics calculation failed: ${error}`] };
+    }
+  }
+
   async syncProject(projectKey: string, options: Omit<SyncOptions, 'projectKeys'> = {}): Promise<SyncResult> {
     const result: SyncResult = {
       projects: 0,
@@ -585,6 +769,9 @@ class SyncService {
       sprints: 0,
       issues: 0,
       metrics: 0,
+      kanbanBoards: 0,
+      kanbanIssues: 0,
+      kanbanMetrics: 0,
       errors: [],
     };
 
@@ -627,6 +814,9 @@ class SyncService {
       sprints: 0,
       issues: 0,
       metrics: 0,
+      kanbanBoards: 0,
+      kanbanIssues: 0,
+      kanbanMetrics: 0,
       errors: [],
     };
 
@@ -669,6 +859,9 @@ class SyncService {
       sprints: 0,
       issues: 0,
       metrics: 0,
+      kanbanBoards: 0,
+      kanbanIssues: 0,
+      kanbanMetrics: 0,
       errors: [],
     };
 

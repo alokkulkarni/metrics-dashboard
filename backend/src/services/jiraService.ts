@@ -388,6 +388,169 @@ class JiraService {
       }
     }
   }
+
+  // Kanban-specific methods
+  async getKanbanBoardsForProject(projectKey: string): Promise<JiraBoard[]> {
+    try {
+      const allBoards: JiraBoard[] = [];
+      let startAt = 0;
+      const maxResults = 50;
+      let isLastPage = false;
+
+      while (!isLastPage) {
+        const response = await this.client.get(`/rest/agile/1.0/board`, {
+          params: {
+            projectKeyOrId: projectKey,
+            type: 'kanban',
+            startAt,
+            maxResults,
+          },
+        });
+
+        const boards = response.data.values || [];
+        allBoards.push(...boards);
+
+        isLastPage = response.data.isLast || boards.length < maxResults;
+        startAt += maxResults;
+
+        logger.debug(`Fetched ${boards.length} kanban boards for project ${projectKey} (total so far: ${allBoards.length})`);
+      }
+
+      logger.info(`Successfully fetched ${allBoards.length} kanban boards for project ${projectKey}`);
+      return allBoards;
+    } catch (error) {
+      logger.error(`Failed to fetch kanban boards for project ${projectKey}:`, error);
+      throw error;
+    }
+  }
+
+  async getAllKanbanBoards(): Promise<JiraBoard[]> {
+    try {
+      const allBoards: JiraBoard[] = [];
+      let startAt = 0;
+      const maxResults = 50;
+      let isLastPage = false;
+
+      while (!isLastPage) {
+        const response = await this.client.get(`/rest/agile/1.0/board`, {
+          params: {
+            type: 'kanban',
+            startAt,
+            maxResults,
+          },
+        });
+
+        const boards = response.data.values || [];
+        allBoards.push(...boards);
+
+        isLastPage = response.data.isLast || boards.length < maxResults;
+        startAt += maxResults;
+
+        logger.debug(`Fetched ${boards.length} kanban boards (total so far: ${allBoards.length})`);
+      }
+
+      logger.info(`Successfully fetched ${allBoards.length} kanban boards`);
+      return allBoards;
+    } catch (error) {
+      logger.error('Failed to fetch all kanban boards:', error);
+      throw error;
+    }
+  }
+
+  async getKanbanBoardConfiguration(boardId: number): Promise<any> {
+    try {
+      const response = await this.client.get(`/rest/agile/1.0/board/${boardId}/configuration`);
+      logger.debug(`Fetched configuration for kanban board ${boardId}`);
+      return response.data;
+    } catch (error) {
+      logger.error(`Failed to fetch configuration for kanban board ${boardId}:`, error);
+      throw error;
+    }
+  }
+
+  async getIssuesForKanbanBoard(boardId: number): Promise<JiraIssue[]> {
+    try {
+      const allIssues: JiraIssue[] = [];
+      let startAt = 0;
+      const maxResults = 100;
+      let isLastPage = false;
+
+      while (!isLastPage) {
+        const response = await this.client.get(`/rest/agile/1.0/board/${boardId}/issue`, {
+          params: {
+            startAt,
+            maxResults,
+            fields: 'summary,description,issuetype,status,priority,assignee,reporter,customfield_10030,created,updated,resolutiondate,parent,labels,components,fixVersions',
+            expand: 'changelog',
+          },
+        });
+
+        const issues = response.data.issues || [];
+        allIssues.push(...issues);
+
+        isLastPage = response.data.isLast || issues.length < maxResults;
+        startAt += maxResults;
+
+        logger.debug(`Fetched ${issues.length} issues for kanban board ${boardId} (total so far: ${allIssues.length})`);
+      }
+
+      logger.info(`Successfully fetched ${allIssues.length} issues for kanban board ${boardId}`);
+      return allIssues;
+    } catch (error) {
+      logger.error(`Failed to fetch issues for kanban board ${boardId}:`, error);
+      throw error;
+    }
+  }
+
+  async getKanbanIssueWithBoardDetails(boardId: number, issueKey: string): Promise<any> {
+    try {
+      // Get issue details with board-specific information
+      const response = await this.client.get(`/rest/agile/1.0/issue/${issueKey}`, {
+        params: {
+          fields: 'summary,description,issuetype,status,priority,assignee,reporter,customfield_10030,created,updated,resolutiondate,parent,labels,components,fixVersions',
+          expand: 'changelog,names',
+        },
+      });
+
+      const issue = response.data;
+
+      // Try to get board-specific information like column and swimlane
+      try {
+        const boardConfig = await this.getKanbanBoardConfiguration(boardId);
+        
+        // Map status to column if possible
+        const columns = boardConfig.columnConfig?.columns || [];
+        const currentColumn = columns.find((col: any) => 
+          col.statuses?.some((status: any) => status.id === issue.fields.status.id)
+        );
+
+        if (currentColumn) {
+          issue.kanbanDetails = {
+            columnId: currentColumn.id,
+            columnName: currentColumn.name,
+            columnConfig: currentColumn,
+          };
+        }
+
+        // Add swimlane information if available
+        if (boardConfig.ranking?.rankCustomFieldId) {
+          issue.kanbanDetails = {
+            ...issue.kanbanDetails,
+            rankCustomFieldId: boardConfig.ranking.rankCustomFieldId,
+          };
+        }
+
+      } catch (configError) {
+        logger.warn(`Could not fetch board configuration for kanban board ${boardId}:`, configError);
+        // Continue without board-specific details
+      }
+
+      return issue;
+    } catch (error) {
+      logger.error(`Failed to fetch kanban issue ${issueKey} for board ${boardId}:`, error);
+      throw error;
+    }
+  }
 }
 
 export const jiraService = new JiraService();

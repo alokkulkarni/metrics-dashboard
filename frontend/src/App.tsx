@@ -4,6 +4,8 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import Dashboard from './pages/Dashboard'
 import Boards from './pages/Boards'
 import BoardDetails from './pages/BoardDetails'
+import KanbanBoardDetails from './pages/KanbanBoardDetails'
+import SimpleKanbanTest from './pages/SimpleKanbanTest'
 import ResourceSpread from './pages/ResourceSpread'
 import Layout from './components/Layout'
 import { logger } from './utils/logger'
@@ -33,6 +35,7 @@ function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/boards" element={<Boards />} />
             <Route path="/boards/:boardId" element={<BoardDetails />} />
+            <Route path="/kanban-boards/:boardId" element={<KanbanBoardDetails />} />
             <Route path="/resource-spread" element={<ResourceSpread />} />
           </Routes>
         </Layout>

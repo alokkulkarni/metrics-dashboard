@@ -147,7 +147,7 @@ const BoardDetails: React.FC = () => {
       {boardMetrics ? (
         <div className="bg-white p-6 rounded-lg shadow border">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Board Performance Metrics</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
             <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border border-blue-200">
               <div className="text-2xl font-bold text-blue-900">{parseFloat(String(boardMetrics.averageVelocity || '0')).toFixed(1)}</div>
               <div className="flex items-center justify-center gap-1 text-sm font-medium text-blue-700">
@@ -173,6 +173,19 @@ const BoardDetails: React.FC = () => {
                 />
               </div>
               <div className="text-xs text-green-600 mt-1">Sprint Success</div>
+            </div>
+            <div className="text-center p-4 bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg border border-orange-200">
+              <div className="text-2xl font-bold text-orange-900">{parseFloat(String(boardMetrics.averageChurnRate || '0')).toFixed(1)}%</div>
+              <div className="flex items-center justify-center gap-1 text-sm font-medium text-orange-700">
+                <span>Average Churn Rate</span>
+                <MetricTooltip
+                  title={METRIC_DEFINITIONS.averageChurnRate.title}
+                  definition={METRIC_DEFINITIONS.averageChurnRate.definition}
+                  calculation={METRIC_DEFINITIONS.averageChurnRate.calculation}
+                  example={METRIC_DEFINITIONS.averageChurnRate.example}
+                />
+              </div>
+              <div className="text-xs text-orange-600 mt-1">Scope Change</div>
             </div>
             <div className="text-center p-4 bg-gradient-to-br from-red-50 to-red-100 rounded-lg border border-red-200">
               <div className="text-2xl font-bold text-red-900">{parseFloat(String(boardMetrics.averageDefectLeakageRate || '0')).toFixed(1)}%</div>

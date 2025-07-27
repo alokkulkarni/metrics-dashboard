@@ -11,6 +11,7 @@ export interface Board {
   updatedAt: string
   activeSprintCount?: number
   totalSprintCount?: number
+  boardType?: string // 'scrum' or 'kanban'
   project?: {
     id: number
     jiraProjectKey: string
@@ -20,6 +21,8 @@ export interface Board {
 
 export interface BoardStats {
   total: number
+  scrum: number
+  kanban: number
   byType: Record<string, number>
 }
 
@@ -163,17 +166,8 @@ export const boardService = {
 
   // Get board statistics
   getBoardStats: async (): Promise<BoardStats> => {
-    const response = await api.get('/boards')
-    const boards = response.data.data || []
-    
-    // Calculate stats from the actual board data
-    const total = boards.length
-    const byType = boards.reduce((acc: Record<string, number>, board: Board) => {
-      acc[board.type] = (acc[board.type] || 0) + 1
-      return acc
-    }, {})
-    
-    return { total, byType }
+    const response = await api.get('/boards/stats')
+    return response.data.data
   },
 
   // Get board by ID

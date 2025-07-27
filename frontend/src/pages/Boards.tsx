@@ -1,20 +1,32 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { RefreshCw, Plus, Search, Filter, X } from 'lucide-react'
+import { RefreshCw, Plus, Search, Filter, X, AlertTriangle } from 'lucide-react'
 import { useBoards, useSyncBoards } from '../hooks/useBoards'
+import { useKanbanMetrics } from '../hooks/useKanbanMetrics'
 import LoadingSpinner from '../components/LoadingSpinner'
 
 const Boards: React.FC = () => {
   const { data: boards, isLoading, error, refetch } = useBoards()
+  const { data: kanbanMetrics } = useKanbanMetrics()
   const { mutate: syncBoards, isPending: syncPending } = useSyncBoards()
   const autoSyncedRef = useRef(false)
+
+  // Create a set of kanban board IDs that have metrics for quick lookup
+  const kanbanBoardsWithMetrics = useMemo(() => {
+    if (!kanbanMetrics) return new Set()
+    return new Set(kanbanMetrics.map(metric => metric.boardInfo.id))
+  }, [kanbanMetrics])
 
   // Filter state
   const [filters, setFilters] = useState({
     boardName: '',
     projectKey: '',
-    status: 'all' // 'all', 'active', 'inactive'
+    status: 'all', // 'all', 'active', 'inactive'
+    boardType: 'all' // 'all', 'scrum', 'kanban'
   })
+  
+  // Force update trigger for filtering
+  const [filterUpdateKey, setFilterUpdateKey] = useState(0)
 
   // Get unique project keys for filter dropdown
   const uniqueProjectKeys = useMemo(() => {
@@ -25,42 +37,67 @@ const Boards: React.FC = () => {
 
   // Filter boards based on current filters
   const filteredBoards = useMemo(() => {
+    console.log('🔍 FILTERING: boards count:', boards?.length, 'filters:', JSON.stringify(filters), 'updateKey:', filterUpdateKey)
     if (!boards) return []
     
-    return boards.filter(board => {
+    const result = boards.filter(board => {
       // Board name filter
       if (filters.boardName && !board.name.toLowerCase().includes(filters.boardName.toLowerCase())) {
+        console.log('❌ Name filter failed for:', board.name)
         return false
       }
       
-      // Project key filter
-      if (filters.projectKey && board.project?.jiraProjectKey !== filters.projectKey) {
-        return false
+      // Project key filter (only filter if a specific project is selected and not 'all' or empty)
+      if (filters.projectKey && filters.projectKey !== '' && filters.projectKey !== 'all') {
+        if (board.project?.jiraProjectKey !== filters.projectKey) {
+          console.log('❌ Project filter failed for:', board.name, 'has:', board.project?.jiraProjectKey, 'wanted:', filters.projectKey)
+          return false
+        }
       }
       
       // Status filter
       if (filters.status === 'active' && !board.isActive) {
+        console.log('❌ Status filter failed (wanted active):', board.name)
         return false
       }
       if (filters.status === 'inactive' && board.isActive) {
+        console.log('❌ Status filter failed (wanted inactive):', board.name)
         return false
+      }
+      
+      // Board type filter (only filter if a specific type is selected, not 'all')
+      if (filters.boardType && filters.boardType !== 'all') {
+        if (board.type !== filters.boardType) {
+          console.log('❌ Type filter failed for:', board.name, 'has:', board.type, 'wanted:', filters.boardType)
+          return false
+        }
       }
       
       return true
     })
-  }, [boards, filters])
+    
+    console.log('🎯 FILTERED RESULT:', result.length, 'boards out of', boards?.length || 0)
+    return result
+  }, [boards, filters, filterUpdateKey])
+
+  // Log when component re-renders with filtered boards
+  useEffect(() => {
+    console.log('📊 COMPONENT RENDER: filteredBoards count:', filteredBoards.length)
+  }, [filteredBoards])
 
   // Clear all filters
   const clearFilters = () => {
     setFilters({
       boardName: '',
       projectKey: '',
-      status: 'all'
+      status: 'all',
+      boardType: 'all'
     })
+    setFilterUpdateKey(prev => prev + 1)
   }
 
   // Check if any filters are active
-  const hasActiveFilters = filters.boardName || filters.projectKey || filters.status !== 'all'
+  const hasActiveFilters = filters.boardName || filters.projectKey || filters.status !== 'all' || filters.boardType !== 'all'
 
   // Helper function to check if boards data needs syncing
   const shouldSyncBoards = (boardsData: any[]) => {
@@ -157,7 +194,10 @@ const Boards: React.FC = () => {
                   id="boardName"
                   type="text"
                   value={filters.boardName}
-                  onChange={(e) => setFilters(prev => ({ ...prev, boardName: e.target.value }))}
+                  onChange={(e) => {
+                    setFilters(prev => ({ ...prev, boardName: e.target.value }))
+                    setFilterUpdateKey(prev => prev + 1)
+                  }}
                   placeholder="Search boards..."
                   className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                 />
@@ -172,7 +212,11 @@ const Boards: React.FC = () => {
               <select
                 id="projectKey"
                 value={filters.projectKey}
-                onChange={(e) => setFilters(prev => ({ ...prev, projectKey: e.target.value }))}
+                onChange={(e) => {
+                  console.log('Project key filter changed to:', e.target.value)
+                  setFilters(prev => ({ ...prev, projectKey: e.target.value }))
+                  setFilterUpdateKey(prev => prev + 1)
+                }}
                 className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
               >
                 <option value="">All Projects</option>
@@ -190,12 +234,36 @@ const Boards: React.FC = () => {
               <select
                 id="status"
                 value={filters.status}
-                onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
+                onChange={(e) => {
+                  setFilters(prev => ({ ...prev, status: e.target.value }))
+                  setFilterUpdateKey(prev => prev + 1)
+                }}
                 className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
               >
                 <option value="all">All Boards</option>
                 <option value="active">Active Only</option>
                 <option value="inactive">Inactive Only</option>
+              </select>
+            </div>
+
+            {/* Board Type Filter */}
+            <div className="flex-1 min-w-0">
+              <label htmlFor="boardType" className="block text-sm font-medium text-gray-700 mb-1">
+                Board Type
+              </label>
+              <select
+                id="boardType"
+                value={filters.boardType}
+                onChange={(e) => {
+                  console.log('Board type filter changed to:', e.target.value)
+                  setFilters(prev => ({ ...prev, boardType: e.target.value }))
+                  setFilterUpdateKey(prev => prev + 1)
+                }}
+                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              >
+                <option value="all">All Types</option>
+                <option value="scrum">Scrum Boards</option>
+                <option value="kanban">Kanban Boards</option>
               </select>
             </div>
           </div>
@@ -232,30 +300,62 @@ const Boards: React.FC = () => {
 
       {/* Boards Grid */}
       {filteredBoards && filteredBoards.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredBoards.map((board) => (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" key={`grid-${filteredBoards.length}-${filters.boardType}-${filters.projectKey}-${filters.status}-${filters.boardName}`}>
+          {filteredBoards.map((board) => {
+            // Check if this kanban board has metrics
+            const hasMetrics = board.type !== 'kanban' || kanbanBoardsWithMetrics.has(board.id)
+            
+            return (
             <div key={board.id} className="card hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    {board.name}
-                  </h3>
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      {board.name}
+                    </h3>
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                      board.type === 'kanban' 
+                        ? 'bg-purple-100 text-purple-800' 
+                        : 'bg-blue-100 text-blue-800'
+                    }`}>
+                      {board.type === 'kanban' ? 'Kanban' : 'Scrum'}
+                    </span>
+                    {board.type === 'kanban' && !hasMetrics && (
+                      <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                        <AlertTriangle className="h-3 w-3" />
+                        No Metrics
+                      </span>
+                    )}
+                  </div>
                   <div className="space-y-1 text-sm text-gray-600">
                     <p><span className="font-medium">Project:</span> {board.project?.jiraProjectKey || 'N/A'}</p>
                     <p><span className="font-medium">Type:</span> {board.type}</p>
                     <p><span className="font-medium">Location:</span> {board.location}</p>
-                    <p><span className="font-medium">Sprints:</span> {board.totalSprintCount || 0} total, {board.activeSprintCount || 0} active</p>
+                    {board.type === 'scrum' ? (
+                      <p><span className="font-medium">Sprints:</span> {board.totalSprintCount || 0} total, {board.activeSprintCount || 0} active</p>
+                    ) : hasMetrics ? (
+                      <p><span className="font-medium">Flow:</span> Continuous delivery</p>
+                    ) : (
+                      <p><span className="font-medium">Status:</span> <span className="text-yellow-600">No issues or metrics available</span></p>
+                    )}
                   </div>
                 </div>
-                <span 
-                  className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                    board.isActive 
-                      ? 'bg-green-100 text-green-800' 
-                      : 'bg-gray-100 text-gray-800'
-                  }`}
-                >
-                  {board.isActive ? 'Active' : 'Inactive'}
-                </span>
+                <div className="flex flex-col gap-2 items-end">
+                  <span 
+                    className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                      board.isActive 
+                        ? 'bg-green-100 text-green-800' 
+                        : 'bg-gray-100 text-gray-800'
+                    }`}
+                  >
+                    {board.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                  {board.type === 'kanban' && !hasMetrics && (
+                    <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full bg-orange-100 text-orange-800">
+                      Inactive Board
+                    </span>
+                  )}
+                </div>
               </div>
               
               <div className="mt-4 pt-4 border-t border-gray-200">
@@ -264,15 +364,20 @@ const Boards: React.FC = () => {
                     Created {new Date(board.createdAt).toLocaleDateString()}
                   </span>
                   <Link 
-                    to={`/boards/${board.id}`}
-                    className="btn-primary text-sm"
+                    to={board.type === 'kanban' ? `/kanban-boards/${board.id}` : `/boards/${board.id}`}
+                    className={`text-sm px-3 py-1 rounded-md font-medium transition-colors ${
+                      hasMetrics 
+                        ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                        : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
+                    }`}
                   >
-                    View Details
+                    {hasMetrics ? 'View Details' : 'Setup Metrics'}
                   </Link>
                 </div>
               </div>
             </div>
-          ))}
+            )
+          })}
         </div>
       ) : (
         <div className="text-center py-12">

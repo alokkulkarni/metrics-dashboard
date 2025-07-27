@@ -140,6 +140,42 @@ export const METRIC_DEFINITIONS = {
     definition: 'The total number of sprints currently in progress across all boards.',
     calculation: 'Count of all sprints with status "active"',
     example: 'If 2 teams have ongoing sprints, active sprints count is 2.'
+  },
+  
+  // Kanban-specific metrics
+  wipViolations: {
+    title: 'WIP Violations',
+    definition: 'The number of columns that exceed their Work-in-Progress limits.',
+    calculation: 'Count of columns where current issue count > WIP limit',
+    example: 'If "In Progress" has 8 issues but limit is 5, that\'s 1 WIP violation.'
+  },
+  
+  flowEfficiency: {
+    title: 'Flow Efficiency',
+    definition: 'The percentage of time issues spend in active work states vs waiting states.',
+    calculation: '(Active Time / Total Time) × 100',
+    example: 'If issues spend 6 days active out of 10 total days, flow efficiency is 60%.'
+  },
+  
+  throughput: {
+    title: 'Throughput',
+    definition: 'The number of issues completed within a specific time period.',
+    calculation: 'Count of issues completed in the time period',
+    example: 'If 12 issues were completed in a 2-week sprint, throughput is 12.'
+  },
+  
+  averageThroughput: {
+    title: 'Average Throughput',
+    definition: 'The average number of issues completed per board per time period.',
+    calculation: 'Total completed issues / number of boards / time period',
+    example: 'If 3 boards completed 24 issues total in a week, average throughput is 8/week per board.'
+  },
+
+  averageChurnRate: {
+    title: 'Average Churn Rate',
+    definition: 'The average percentage of scope change across all sprints and boards.',
+    calculation: 'Average of all churn rates from completed sprints across boards',
+    example: 'If boards have churn rates of 10%, 20%, and 15%, the average churn rate is 15%.'
   }
 }
 
