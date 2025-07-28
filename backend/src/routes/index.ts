@@ -6,6 +6,7 @@ import issueRoutes from './issues';
 import metricRoutes from './metrics';
 import syncRoutes from './sync';
 import kanbanMetricsRoutes from './kanbanMetrics';
+import resourceRoutes from './resources';
 
 const router = Router();
 
@@ -17,6 +18,7 @@ router.use('/issues', issueRoutes);
 router.use('/metrics', metricRoutes);
 router.use('/sync', syncRoutes);
 router.use('/kanban-metrics', kanbanMetricsRoutes);
+router.use('/resources', resourceRoutes);
 
 // Health check endpoint
 router.get('/health', (req, res) => {
