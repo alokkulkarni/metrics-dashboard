@@ -4,8 +4,10 @@ import { Issue } from '../models/Issue';
 import { SprintMetrics } from '../models/SprintMetrics';
 import { BoardMetrics } from '../models/BoardMetrics';
 import { logger } from '../utils/logger';
+import { filterOutSubTasks, filterForQualityMetrics, filterDefectIssues } from '../utils/issueFilters';
 import { Op } from 'sequelize';
 import { SprintCommentaryService } from './sprintCommentaryService';
+import { IssueChangelogService } from './IssueChangelogService';
 
 export interface CalculatedSprintMetrics {
   sprintId: number;
@@ -71,13 +73,16 @@ export class MetricsCalculationService {
       }
 
       // Get all issues for this sprint
-      const issues = await Issue.findAll({
+      const allIssues = await Issue.findAll({
         where: { sprintId },
         raw: true,
       });
 
+      // Filter out sub-tasks from ALL sprint metrics calculations
+      const issues = filterOutSubTasks(allIssues, `Sprint ${sprintId}`);
+
       if (issues.length === 0) {
-        logger.info(`No issues found for sprint ${sprintId}`);
+        logger.info(`No non-sub-task issues found for sprint ${sprintId}`);
         return {
           sprintId,
           velocity: 0,
@@ -182,21 +187,14 @@ export class MetricsCalculationService {
 
       // Calculate quality metrics (defect leakage rate and quality rate)
       // Only count 'Defect' issues as actual defects, exclude 'Bug' issues entirely
-      const defectIssueTypes = ['Defect'];
-      const excludedIssueTypes = ['Release', 'Sub-task', 'Spike', 'Bug'];
-      
-      const defectIssues = issues.filter(issue => 
-        defectIssueTypes.includes(issue.issueType)
-      );
+      const defectIssues = filterDefectIssues(issues);
       const totalDefects = defectIssues.length;
       const completedDefects = defectIssues.filter(issue => 
         ['Done', 'Closed', 'Resolved'].includes(issue.status as string)
       ).length;
 
       // Filter out excluded issue types for quality calculation
-      const relevantIssues = issues.filter(issue => 
-        !excludedIssueTypes.includes(issue.issueType)
-      );
+      const relevantIssues = filterForQualityMetrics(issues);
       const totalRelevantIssues = relevantIssues.length;
 
       // Defect Leakage Rate: Percentage of defects compared to relevant issues (excluding releases, sub-tasks, spikes)
@@ -210,10 +208,8 @@ export class MetricsCalculationService {
         completedDefects,
         totalIssues,
         totalRelevantIssues,
-        excludedTypes: excludedIssueTypes,
         defectLeakageRate,
-        qualityRate,
-        defectTypes: defectIssueTypes
+        qualityRate
       });
 
       // Calculate cycle time and lead time for completed issues
@@ -237,30 +233,78 @@ export class MetricsCalculationService {
         averageLeadTime = averageCycleTime; // For now, treating them the same
       }
 
-      // Calculate churn rate based on incomplete work (scope not delivered)
-      // This provides a practical measure of sprint instability/scope change
-      // Higher churn indicates more stories were committed but not completed
+      // Calculate churn rate using actual issue movements from changelog data
+      // Churn rate formula: ((added + removed) / committedStoryPoints) * 100
+      // This provides an accurate measure of sprint scope changes during the sprint
       
-      // For now, we'll use this as a proxy for scope changes:
-      // - If completion rate is low, it indicates scope churn/instability
-      // - Churn rate = percentage of uncommitted/incomplete work
-      const incompleteStoryPoints = totalStoryPoints - completedStoryPoints;
-      const churnRate = totalStoryPoints > 0 ? 
-        (incompleteStoryPoints / totalStoryPoints) * 100 : 0;
-
-      logger.info(`Sprint ${sprintId} churn rate calculation:`, {
-        totalStoryPoints,
-        completedStoryPoints,
-        incompleteStoryPoints,
-        churnRate,
-        calculatedRate: totalStoryPoints > 0 ? (incompleteStoryPoints / totalStoryPoints) * 100 : 0
-      });
-
-      // For historical tracking, we'd need additional data
-      const addedStoryPoints = 0; // Would need historical tracking
-      const removedStoryPoints = 0; // Would need historical tracking
-      const addedIssues = 0; // Would need historical tracking
-      const removedIssues = 0; // Would need historical tracking
+      let churnRate = 0;
+      let addedStoryPoints = 0;
+      let removedStoryPoints = 0;
+      let addedIssues = 0;
+      let removedIssues = 0;
+      
+      try {
+        // Get actual sprint changes from changelog if sprint dates are available
+        if (sprint.startDate && sprint.endDate) {
+          const changelogService = new IssueChangelogService();
+          const sprintChanges = await changelogService.getSprintChangelogForChurn(
+            sprintId, 
+            sprint.startDate, 
+            sprint.endDate
+          );
+          
+          addedStoryPoints = sprintChanges.addedStoryPoints;
+          removedStoryPoints = sprintChanges.removedStoryPoints;
+          addedIssues = sprintChanges.addedIssues;
+          removedIssues = sprintChanges.removedIssues;
+          
+          // Calculate churn rate: ((added + removed) / committedStoryPoints) * 100
+          // Use totalStoryPoints as proxy for committed points (at sprint end)
+          const committedStoryPoints = totalStoryPoints;
+          if (committedStoryPoints > 0) {
+            churnRate = ((addedStoryPoints + removedStoryPoints) / committedStoryPoints) * 100;
+          }
+          
+          logger.info(`Sprint ${sprintId} churn rate calculation (changelog-based):`, {
+            sprintStartDate: sprint.startDate,
+            sprintEndDate: sprint.endDate,
+            addedStoryPoints,
+            removedStoryPoints,
+            addedIssues,
+            removedIssues,
+            committedStoryPoints,
+            churnRate,
+            formula: '((added + removed) / committed) * 100'
+          });
+        } else {
+          logger.warn(`Sprint ${sprintId} missing start/end dates, using fallback churn calculation`);
+          throw new Error('Missing sprint dates');
+        }
+        
+      } catch (error) {
+        logger.warn(`Failed to calculate changelog-based churn rate for sprint ${sprintId}, falling back to default:`, error);
+        
+        // Fallback: Without changelog data, we cannot accurately measure scope changes
+        // Set churn rate to 0% rather than using an incorrect completion-based calculation
+        // The previous calculation was using (incompleteStoryPoints / totalStoryPoints) * 100
+        // which measures incompletion rate, not churn rate (scope changes during sprint)
+        churnRate = 0;
+        addedStoryPoints = 0;
+        removedStoryPoints = 0;
+        addedIssues = 0;
+        removedIssues = 0;
+        
+        logger.info(`Sprint ${sprintId} churn rate calculation (fallback):`, {
+          totalStoryPoints,
+          completedStoryPoints,
+          churnRate,
+          addedStoryPoints,
+          removedStoryPoints,
+          addedIssues,
+          removedIssues,
+          note: 'Set to 0% due to missing changelog data - cannot measure actual scope changes'
+        });
+      }
       
       // Scope change percent is the same as churn rate for now
       const scopeChangePercent = churnRate;
@@ -534,6 +578,10 @@ export class MetricsCalculationService {
         qualityRate: metrics.qualityRate,
         totalDefects: metrics.totalDefects,
         completedDefects: metrics.completedDefects,
+        replanningRate: 0,  // TODO: Calculate actual replanning metrics
+        replanningCount: 0,
+        replanningFromCurrentSprint: 0,
+        replanningToCurrentSprint: 0,
         commentary: commentary,
         calculatedAt: metrics.calculatedAt,
       });

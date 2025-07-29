@@ -9,6 +9,7 @@ import { KanbanBoard } from '../models/KanbanBoard';
 import { jiraService } from './jiraService';
 import { MetricsCalculationService } from './MetricsCalculationService';
 import { kanbanSyncService } from './kanbanSyncService';
+import { IssueChangelogService } from './IssueChangelogService';
 
 interface SyncOptions {
   forceSync?: boolean;
@@ -23,6 +24,7 @@ interface SyncResult {
   boards: number;
   sprints: number;
   issues: number;
+  changelogEntries: number;
   metrics: number;
   kanbanBoards: number;
   kanbanIssues: number;
@@ -43,6 +45,7 @@ class SyncService {
       boards: 0,
       sprints: 0,
       issues: 0,
+      changelogEntries: 0,
       metrics: 0,
       kanbanBoards: 0,
       kanbanIssues: 0,
@@ -109,6 +112,7 @@ class SyncService {
         // Sync issues
         const issuesResult = await this.syncIssues(options);
         result.issues = issuesResult.synced;
+        result.changelogEntries = issuesResult.changelogEntries;
         result.errors.push(...issuesResult.errors);
 
         // Calculate metrics
@@ -485,8 +489,8 @@ class SyncService {
     }
   }
 
-  private async syncIssues(options: SyncOptions): Promise<{ synced: number; errors: string[] }> {
-    const result = { synced: 0, errors: [] as string[] };
+  private async syncIssues(options: SyncOptions): Promise<{ synced: number; errors: string[]; changelogEntries: number }> {
+    const result = { synced: 0, errors: [] as string[], changelogEntries: 0 };
 
     try {
       logger.info('Syncing issues...');
@@ -587,6 +591,20 @@ class SyncService {
       }
 
       logger.info(`Issues sync completed: ${result.synced} synced, ${result.errors.length} errors`);
+      
+      // Sync issue changelog data after issues are synced
+      try {
+        logger.info('Syncing issue changelog data...');
+        const changelogService = new IssueChangelogService();
+        const changelogResult = await changelogService.syncAllIssueChangelogs();
+        result.changelogEntries = changelogResult.addedChangelogEntries;
+        logger.info(`Issue changelog sync completed: ${changelogResult.addedChangelogEntries} entries processed`);
+      } catch (error) {
+        const errorMsg = `Failed to sync issue changelog: ${error}`;
+        logger.error(errorMsg);
+        result.errors.push(errorMsg);
+      }
+      
       return result;
     } catch (error) {
       logger.error('Failed to sync issues:', error);
@@ -768,6 +786,7 @@ class SyncService {
       boards: 0,
       sprints: 0,
       issues: 0,
+      changelogEntries: 0,
       metrics: 0,
       kanbanBoards: 0,
       kanbanIssues: 0,
@@ -813,6 +832,7 @@ class SyncService {
       boards: 0,
       sprints: 0,
       issues: 0,
+      changelogEntries: 0,
       metrics: 0,
       kanbanBoards: 0,
       kanbanIssues: 0,
@@ -858,6 +878,7 @@ class SyncService {
       boards: 0,
       sprints: 0,
       issues: 0,
+      changelogEntries: 0,
       metrics: 0,
       kanbanBoards: 0,
       kanbanIssues: 0,

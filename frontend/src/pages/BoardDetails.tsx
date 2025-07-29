@@ -59,6 +59,46 @@ const BoardDetails: React.FC = () => {
     }
   }
 
+  // Helper function to calculate trend comparison with previous sprint
+  const calculateTrend = (sprints: any[], currentIndex: number, metricKey: string) => {
+    if (currentIndex >= sprints.length - 1) return { trend: 'neutral', symbol: '' }
+    
+    const currentValue = parseFloat(String(sprints[currentIndex][metricKey] || '0'))
+    const previousValue = parseFloat(String(sprints[currentIndex + 1][metricKey] || '0'))
+    
+    if (previousValue === 0) return { trend: 'neutral', symbol: '' }
+    
+    const difference = currentValue - previousValue
+    const percentChange = (difference / previousValue) * 100
+    
+    // For metrics where higher is better (velocity, completion rate, quality rate)
+    const higherIsBetter = ['velocity', 'completionRate', 'qualityRate'].includes(metricKey)
+    // For metrics where lower is better (churn rate, defect leakage rate, cycle time, lead time, replanning rate)
+    const lowerIsBetter = ['churnRate', 'defectLeakageRate', 'averageCycleTime', 'averageLeadTime', 'replanningRate'].includes(metricKey)
+    
+    if (Math.abs(percentChange) < 5) {
+      return { trend: 'neutral', symbol: '➡️' }
+    }
+    
+    if (difference > 0) {
+      // Value increased
+      if (higherIsBetter) {
+        return { trend: 'positive', symbol: '📈' }
+      } else if (lowerIsBetter) {
+        return { trend: 'negative', symbol: '📉' }
+      }
+    } else {
+      // Value decreased
+      if (higherIsBetter) {
+        return { trend: 'negative', symbol: '📉' }
+      } else if (lowerIsBetter) {
+        return { trend: 'positive', symbol: '📈' }
+      }
+    }
+    
+    return { trend: 'neutral', symbol: '➡️' }
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -432,6 +472,18 @@ const BoardDetails: React.FC = () => {
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     <div className="flex items-center gap-1">
+                      <span>Replanning</span>
+                      <MetricTooltip
+                        title={METRIC_DEFINITIONS.replanningRate.title}
+                        definition={METRIC_DEFINITIONS.replanningRate.definition}
+                        calculation={METRIC_DEFINITIONS.replanningRate.calculation}
+                        example={METRIC_DEFINITIONS.replanningRate.example}
+                        className="text-gray-400"
+                      />
+                    </div>
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <div className="flex items-center gap-1">
                       <span>Cycle Time</span>
                       <MetricTooltip
                         title={METRIC_DEFINITIONS.cycleTime.title}
@@ -485,7 +537,7 @@ const BoardDetails: React.FC = () => {
                     // For completed sprints, sort by newest end date first
                     return bEndDate - aEndDate;
                   }
-                }).map((sprintMetric) => {
+                }).map((sprintMetric, index, sortedSprints) => {
                   const isActive = sprintMetric.sprint?.state === 'active';
                   const baseBgClass = isActive 
                     ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-400' 
@@ -493,6 +545,16 @@ const BoardDetails: React.FC = () => {
                   const commentaryBgClass = isActive 
                     ? 'bg-gradient-to-r from-green-25 to-emerald-25 border-l-4 border-green-400' 
                     : 'bg-gray-50 hover:bg-gray-100';
+                  
+                  // Calculate trends for each metric
+                  const velocityTrend = calculateTrend(sortedSprints, index, 'velocity')
+                  const completionTrend = calculateTrend(sortedSprints, index, 'completionRate')
+                  const churnTrend = calculateTrend(sortedSprints, index, 'churnRate')
+                  const qualityTrend = calculateTrend(sortedSprints, index, 'qualityRate')
+                  const defectTrend = calculateTrend(sortedSprints, index, 'defectLeakageRate')
+                  const replanningTrend = calculateTrend(sortedSprints, index, 'replanningRate')
+                  const cycleTrend = calculateTrend(sortedSprints, index, 'averageCycleTime')
+                  const leadTrend = calculateTrend(sortedSprints, index, 'averageLeadTime')
                   
                   return (
                     <React.Fragment key={sprintMetric.id}>
@@ -557,6 +619,18 @@ const BoardDetails: React.FC = () => {
                             <span className={`text-sm font-medium ${isActive ? 'text-green-900' : 'text-gray-900'}`}>
                               {parseFloat(String(sprintMetric.velocity || '0')).toFixed(1)}
                             </span>
+                            {velocityTrend.symbol && (
+                              <span 
+                                className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-sm font-bold ${
+                                  velocityTrend.trend === 'up' ? 'bg-green-100 text-green-700' :
+                                  velocityTrend.trend === 'down' ? 'bg-red-100 text-red-700' :
+                                  'bg-gray-100 text-gray-600'
+                                }`}
+                                title={`Trend vs previous sprint: ${velocityTrend.trend}`}
+                              >
+                                {velocityTrend.symbol}
+                              </span>
+                            )}
                             <div className="velocity-bar">
                               <div
                                 className="velocity-bar-fill"
@@ -569,10 +643,22 @@ const BoardDetails: React.FC = () => {
                         </td>
                         {/* Completion Rate */}
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center">
+                          <div className="flex items-center space-x-2">
                             <span className={`text-sm ${isActive ? 'text-green-900' : 'text-gray-900'}`}>
                               {parseFloat(String(sprintMetric.completionRate || '0')).toFixed(1)}%
                             </span>
+                            {completionTrend.symbol && (
+                              <span 
+                                className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-sm font-bold ${
+                                  completionTrend.trend === 'up' ? 'bg-green-100 text-green-700' :
+                                  completionTrend.trend === 'down' ? 'bg-red-100 text-red-700' :
+                                  'bg-gray-100 text-gray-600'
+                                }`}
+                                title={`Trend vs previous sprint: ${completionTrend.trend}`}
+                              >
+                                {completionTrend.symbol}
+                              </span>
+                            )}
                             <div className="completion-rate-bar">
                               <div
                                 className={`completion-rate-bar-fill ${
@@ -630,6 +716,18 @@ const BoardDetails: React.FC = () => {
                             <span className={`text-sm ${isActive ? 'text-green-900' : 'text-gray-900'}`}>
                               {parseFloat(String(sprintMetric.churnRate || '0')).toFixed(1)}%
                             </span>
+                            {churnTrend.symbol && (
+                              <span 
+                                className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-sm font-bold ${
+                                  churnTrend.trend === 'up' ? 'bg-red-100 text-red-700' :
+                                  churnTrend.trend === 'down' ? 'bg-green-100 text-green-700' :
+                                  'bg-gray-100 text-gray-600'
+                                }`}
+                                title={`Trend vs previous sprint: ${churnTrend.trend}`}
+                              >
+                                {churnTrend.symbol}
+                              </span>
+                            )}
                             {parseFloat(String(sprintMetric.churnRate || '0')) > 20 && (
                               <span className="text-red-500 text-xs">⚠</span>
                             )}
@@ -641,6 +739,18 @@ const BoardDetails: React.FC = () => {
                             <span className={`text-sm ${isActive ? 'text-green-900' : 'text-gray-900'}`}>
                               {parseFloat(String(sprintMetric.qualityRate || '100')).toFixed(1)}%
                             </span>
+                            {qualityTrend.symbol && (
+                              <span 
+                                className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-sm font-bold ${
+                                  qualityTrend.trend === 'up' ? 'bg-green-100 text-green-700' :
+                                  qualityTrend.trend === 'down' ? 'bg-red-100 text-red-700' :
+                                  'bg-gray-100 text-gray-600'
+                                }`}
+                                title={`Trend vs previous sprint: ${qualityTrend.trend}`}
+                              >
+                                {qualityTrend.symbol}
+                              </span>
+                            )}
                             {parseFloat(String(sprintMetric.qualityRate || '100')) < 90 && (
                               <span className="text-yellow-500 text-xs">⚠</span>
                             )}
@@ -652,34 +762,102 @@ const BoardDetails: React.FC = () => {
                             <span className={`text-sm ${isActive ? 'text-green-900' : 'text-gray-900'}`}>
                               {parseFloat(String(sprintMetric.defectLeakageRate || '0')).toFixed(1)}%
                             </span>
+                            {defectTrend.symbol && (
+                              <span 
+                                className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-sm font-bold ${
+                                  defectTrend.trend === 'up' ? 'bg-red-100 text-red-700' :
+                                  defectTrend.trend === 'down' ? 'bg-green-100 text-green-700' :
+                                  'bg-gray-100 text-gray-600'
+                                }`}
+                                title={`Trend vs previous sprint: ${defectTrend.trend}`}
+                              >
+                                {defectTrend.symbol}
+                              </span>
+                            )}
                             {parseFloat(String(sprintMetric.defectLeakageRate || '0')) > 10 && (
                               <span className="text-red-500 text-xs">⚠</span>
                             )}
                           </div>
                         </td>
+                        {/* Replanning Rate */}
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center space-x-2">
+                            <span className={`text-sm ${isActive ? 'text-green-900' : 'text-gray-900'}`}>
+                              {parseFloat(String(sprintMetric.replanningRate || '0')).toFixed(1)}%
+                            </span>
+                            {replanningTrend.symbol && (
+                              <span 
+                                className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-sm font-bold ${
+                                  replanningTrend.trend === 'up' ? 'bg-red-100 text-red-700' :
+                                  replanningTrend.trend === 'down' ? 'bg-green-100 text-green-700' :
+                                  'bg-gray-100 text-gray-600'
+                                }`}
+                                title={`Trend vs previous sprint: ${replanningTrend.trend}`}
+                              >
+                                {replanningTrend.symbol}
+                              </span>
+                            )}
+                            {parseFloat(String(sprintMetric.replanningRate || '0')) > 15 && (
+                              <span className="text-yellow-500 text-xs">⚠</span>
+                            )}
+                          </div>
+                          {sprintMetric.replanningCount > 0 && (
+                            <div className={`text-xs mt-1 ${isActive ? 'text-green-600' : 'text-gray-500'}`}>
+                              {sprintMetric.replanningCount} items moved
+                            </div>
+                          )}
+                        </td>
                         {/* Cycle Time */}
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className={`text-sm ${isActive ? 'text-green-900' : 'text-gray-900'}`}>
-                            {sprintMetric.averageCycleTime 
-                              ? `${parseFloat(String(sprintMetric.averageCycleTime)).toFixed(1)} days`
-                              : 'N/A'
-                            }
+                          <div className="flex items-center space-x-2">
+                            <span className={`text-sm ${isActive ? 'text-green-900' : 'text-gray-900'}`}>
+                              {sprintMetric.averageCycleTime 
+                                ? `${parseFloat(String(sprintMetric.averageCycleTime)).toFixed(1)} days`
+                                : 'N/A'
+                              }
+                            </span>
+                            {cycleTrend.symbol && sprintMetric.averageCycleTime && (
+                              <span 
+                                className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-sm font-bold ${
+                                  cycleTrend.trend === 'up' ? 'bg-red-100 text-red-700' :
+                                  cycleTrend.trend === 'down' ? 'bg-green-100 text-green-700' :
+                                  'bg-gray-100 text-gray-600'
+                                }`}
+                                title={`Trend vs previous sprint: ${cycleTrend.trend}`}
+                              >
+                                {cycleTrend.symbol}
+                              </span>
+                            )}
                           </div>
                         </td>
                         {/* Lead Time */}
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className={`text-sm ${isActive ? 'text-green-900' : 'text-gray-900'}`}>
-                            {sprintMetric.averageLeadTime 
-                              ? `${parseFloat(String(sprintMetric.averageLeadTime)).toFixed(1)} days`
-                              : 'N/A'
-                            }
+                          <div className="flex items-center space-x-2">
+                            <span className={`text-sm ${isActive ? 'text-green-900' : 'text-gray-900'}`}>
+                              {sprintMetric.averageLeadTime 
+                                ? `${parseFloat(String(sprintMetric.averageLeadTime)).toFixed(1)} days`
+                                : 'N/A'
+                              }
+                            </span>
+                            {leadTrend.symbol && sprintMetric.averageLeadTime && (
+                              <span 
+                                className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-sm font-bold ${
+                                  leadTrend.trend === 'up' ? 'bg-red-100 text-red-700' :
+                                  leadTrend.trend === 'down' ? 'bg-green-100 text-green-700' :
+                                  'bg-gray-100 text-gray-600'
+                                }`}
+                                title={`Trend vs previous sprint: ${leadTrend.trend}`}
+                              >
+                                {leadTrend.symbol}
+                              </span>
+                            )}
                           </div>
                         </td>
                       </tr>
                       
                       {/* Second Row - Performance Commentary Only */}
                       <tr className={commentaryBgClass}>
-                        <td colSpan={10} className="px-6 py-3">
+                        <td colSpan={11} className="px-6 py-3">
                           <div className="w-full">
                             {sprintMetric.commentary ? (
                               <div className={`text-sm p-3 rounded-lg border-l-4 ${

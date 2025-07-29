@@ -171,6 +171,13 @@ export const METRIC_DEFINITIONS = {
     example: 'If 3 boards completed 24 issues total in a week, average throughput is 8/week per board.'
   },
 
+  replanningRate: {
+    title: 'Replanning Rate',
+    definition: 'The percentage of issues that were moved between sprints during planning or execution.',
+    calculation: '(Issues Moved to/from Sprint / Total Issues in Sprint) × 100',
+    example: 'If 3 out of 15 issues were moved to/from the sprint, the replanning rate is 20%.'
+  },
+
   averageChurnRate: {
     title: 'Average Churn Rate',
     definition: 'The average percentage of scope change across all sprints and boards.',

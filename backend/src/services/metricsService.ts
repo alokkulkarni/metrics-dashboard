@@ -4,6 +4,7 @@ import { Board } from '../models/Board';
 import { SprintMetrics } from '../models/SprintMetrics';
 import { BoardMetrics } from '../models/BoardMetrics';
 import { logger } from '../utils/logger';
+import { filterOutSubTasks } from '../utils/issueFilters';
 import { Op } from 'sequelize';
 import { SprintCommentaryService } from './sprintCommentaryService';
 
@@ -28,6 +29,10 @@ export interface SprintMetricsData {
   qualityRate: number;
   totalDefects: number;
   completedDefects: number;
+  replanningRate: number;
+  replanningCount: number;
+  replanningFromCurrentSprint: number;
+  replanningToCurrentSprint: number;
   commentary?: string;
 }
 
@@ -63,9 +68,12 @@ class MetricsService {
         throw new Error(`Sprint not found: ${sprintId}`);
       }
 
-      const issues = await Issue.findAll({
+      const allIssues = await Issue.findAll({
         where: { sprintId },
       });
+
+      // Filter out sub-tasks from ALL sprint metrics calculations
+      const issues = filterOutSubTasks(allIssues, `Sprint ${sprintId}`);
 
       const metrics = this.computeSprintMetrics(sprint, issues);
 
@@ -191,11 +199,11 @@ class MetricsService {
     // Quality Rate: Percentage of non-defect issues (inverse of defect leakage rate)
     const qualityRate = issues.length > 0 ? ((issues.length - totalDefects) / issues.length) * 100 : 100;
 
-    // Calculate churn rate based on incomplete work (scope not delivered)
-    // This provides a practical measure of sprint instability/scope change
-    const incompleteStoryPoints = totalStoryPoints - completedStoryPoints;
-    const churnRate = totalStoryPoints > 0 ? 
-      (incompleteStoryPoints / totalStoryPoints) * 100 : 0;
+    // Churn rate calculation: Without changelog data, we cannot accurately measure scope changes
+    // Setting to 0% as we cannot determine actual issues added/removed during sprint
+    // The previous calculation using (incompleteStoryPoints / totalStoryPoints) * 100
+    // was incorrectly measuring incompletion rate, not churn rate
+    const churnRate = 0;
     
     const scopeChangePercent = churnRate;
     const addedStoryPoints = 0;
@@ -239,6 +247,10 @@ class MetricsService {
       qualityRate,
       totalDefects,
       completedDefects,
+      replanningRate: 0,  // TODO: Calculate actual replanning metrics
+      replanningCount: 0,
+      replanningFromCurrentSprint: 0,
+      replanningToCurrentSprint: 0,
     };
   }
 
@@ -401,6 +413,10 @@ class MetricsService {
         qualityRate: metrics.qualityRate,
         totalDefects: metrics.totalDefects,
         completedDefects: metrics.completedDefects,
+        replanningRate: metrics.replanningRate || 0,
+        replanningCount: metrics.replanningCount || 0,
+        replanningFromCurrentSprint: metrics.replanningFromCurrentSprint || 0,
+        replanningToCurrentSprint: metrics.replanningToCurrentSprint || 0,
       };
     } catch (error) {
       logger.error(`Failed to get sprint metrics for sprint ${sprintId}:`, error);

@@ -212,6 +212,20 @@ export class Issue extends Model<IssueAttributes, IssueCreationAttributes> imple
       }
     );
   }
+
+  static associate(models: any): void {
+    // One-to-many with IssueChangelog
+    Issue.hasMany(models.IssueChangelog, {
+      foreignKey: 'issueId',
+      as: 'changelog',
+    });
+
+    // Many-to-one with Sprint
+    Issue.belongsTo(models.Sprint, {
+      foreignKey: 'sprintId',
+      as: 'sprint',
+    });
+  }
 }
 
 export default Issue;

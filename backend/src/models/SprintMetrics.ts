@@ -24,6 +24,10 @@ export interface SprintMetricsAttributes {
   qualityRate: number;
   totalDefects: number;
   completedDefects: number;
+  replanningRate: number;
+  replanningCount: number;
+  replanningFromCurrentSprint: number;
+  replanningToCurrentSprint: number;
   commentary?: string;
   createdAt?: Date;
   updatedAt?: Date;
@@ -56,6 +60,10 @@ export class SprintMetrics extends Model<SprintMetricsAttributes, SprintMetricsC
   public qualityRate!: number;
   public totalDefects!: number;
   public completedDefects!: number;
+  public replanningRate!: number;
+  public replanningCount!: number;
+  public replanningFromCurrentSprint!: number;
+  public replanningToCurrentSprint!: number;
   public commentary?: string;
   public createdAt?: Date;
   public updatedAt?: Date;
@@ -203,6 +211,30 @@ export class SprintMetrics extends Model<SprintMetricsAttributes, SprintMetricsC
           allowNull: false,
           defaultValue: 0,
           field: 'completed_defects',
+        },
+        replanningRate: {
+          type: DataTypes.DECIMAL(5, 2),
+          allowNull: false,
+          defaultValue: 0,
+          field: 'replanning_rate',
+        },
+        replanningCount: {
+          type: DataTypes.INTEGER,
+          allowNull: false,
+          defaultValue: 0,
+          field: 'replanning_count',
+        },
+        replanningFromCurrentSprint: {
+          type: DataTypes.INTEGER,
+          allowNull: false,
+          defaultValue: 0,
+          field: 'replanning_from_current_sprint',
+        },
+        replanningToCurrentSprint: {
+          type: DataTypes.INTEGER,
+          allowNull: false,
+          defaultValue: 0,
+          field: 'replanning_to_current_sprint',
         },
         commentary: {
           type: DataTypes.TEXT,

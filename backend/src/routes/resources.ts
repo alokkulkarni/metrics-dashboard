@@ -6,6 +6,7 @@ import { Board } from '../models/Board';
 import { Project } from '../models/Project';
 import { SprintMetrics } from '../models/SprintMetrics';
 import { logger } from '../utils/logger';
+import { filterOutSubTasks } from '../utils/issueFilters';
 import { Op } from 'sequelize';
 
 const router = Router();
@@ -16,7 +17,7 @@ router.get('/spread', async (req: Request, res: Response) => {
     logger.info('Fetching enhanced resource spread data...');
 
     // Get all issues with their sprint, board, and project information (for active resources)
-    const issues = await Issue.findAll({
+    const activeIssues = await Issue.findAll({
       include: [
         {
           model: Sprint,
@@ -40,8 +41,11 @@ router.get('/spread', async (req: Request, res: Response) => {
       ],
     });
 
+    // Filter out sub-tasks from resource spread calculations
+    const issues = filterOutSubTasks(activeIssues, 'Resource spread');
+
     // Get all issues (including those without sprints) to find all unique users
-    const allIssues = await Issue.findAll({
+    const allIssuesRaw = await Issue.findAll({
       include: [
         {
           model: Sprint,
@@ -64,6 +68,9 @@ router.get('/spread', async (req: Request, res: Response) => {
         },
       ],
     });
+
+    // Filter out sub-tasks from all issues as well
+    const allIssues = filterOutSubTasks(allIssuesRaw, 'All issues (including inactive users)');
 
     // Get sprint metrics for additional context
     const sprintMetrics = await SprintMetrics.findAll({

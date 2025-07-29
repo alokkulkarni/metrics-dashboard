@@ -63,6 +63,10 @@ export interface SprintMetricsData {
   qualityRate: number
   totalDefects: number
   completedDefects: number
+  replanningRate: number
+  replanningCount: number
+  replanningFromCurrentSprint: number
+  replanningToCurrentSprint: number
   calculatedAt: string
   commentary?: string
   sprint?: Sprint

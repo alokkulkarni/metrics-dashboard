@@ -1,7 +1,11 @@
+import { Board } from '../models/Board';
+import { Issue } from '../models/Issue';
+import { logger } from '../utils/logger';
+import { filterOutSubTasks } from '../utils/issueFilters';
 import { KanbanBoard } from '../models/KanbanBoard';
 import { KanbanIssue } from '../models/KanbanIssue';
 import { KanbanMetrics } from '../models/KanbanMetrics';
-import { logger } from '../utils/logger';
+import { Op } from 'sequelize';
 
 interface ColumnMetric {
   columnName: string;
@@ -72,14 +76,15 @@ export class KanbanMetricsCalculationService {
         return null;
       }
 
-      const issues = await KanbanIssue.findAll({
+      const allIssues = await KanbanIssue.findAll({
         where: { kanbanBoardId }
       });
 
-      logger.info(`🔍 Found ${issues.length} issues for board ${board.name}`);
+      // Filter out sub-tasks from Kanban metrics calculations
+      const issues = filterOutSubTasks(allIssues, `Kanban board ${board.name}`);
 
       if (issues.length === 0) {
-        logger.warn(`⚠️ No issues found for Kanban board ${kanbanBoardId}`);
+        logger.warn(`⚠️ No non-sub-task issues found for Kanban board ${kanbanBoardId}`);
         return null;
       }
 
