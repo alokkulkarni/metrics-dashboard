@@ -86,7 +86,10 @@ export class IssueChangelogService {
             const entries = await this.syncIssueChangelog(issue.key);
             processedIssues++;
             addedChangelogEntries += entries;
-            logger.info(`✅ Synced ${entries} changelog entries for issue ${issue.key}`);
+            // Individual issue logging (less verbose)
+            if (entries > 0) {
+              logger.debug(`✅ Synced ${entries} changelog entries for issue ${issue.key}`);
+            }
           } catch (error) {
             errors++;
             logger.error(`❌ Failed to sync changelog for issue ${issue.key}:`, error);
@@ -94,6 +97,12 @@ export class IssueChangelogService {
         });
 
         await Promise.all(batchPromises);
+        
+        // Log progress every 50 issues processed (more useful visibility)
+        if (processedIssues % 50 === 0 || i + batchSize >= issues.length) {
+          const remainingIssues = issues.length - processedIssues;
+          logger.info(`📈 Issue Changelog Progress: ${processedIssues}/${issues.length} issues processed (${remainingIssues} remaining), ${addedChangelogEntries} entries added, ${errors} errors`);
+        }
         
         // Add delay between batches to respect API limits
         if (i + batchSize < issues.length) {

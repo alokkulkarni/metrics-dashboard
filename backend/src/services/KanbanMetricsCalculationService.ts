@@ -100,10 +100,15 @@ export class KanbanMetricsCalculationService {
 
       logger.info('📈 All metrics calculated successfully');
 
-      // Use Sequelize upsert with proper data types
+      // Use find-or-create approach instead of upsert to handle unique constraint properly
       logger.info(`💾 Saving metrics for board ${kanbanBoardId}`);
       
-      const [kanbanMetrics, created] = await KanbanMetrics.upsert({
+      // Try to find existing metrics for this board
+      let kanbanMetrics = await KanbanMetrics.findOne({
+        where: { kanbanBoardId }
+      });
+
+      const metricsData = {
         kanbanBoardId,
         calculatedAt: new Date(),
         totalIssues: statusMetrics.totalIssues,
@@ -143,9 +148,19 @@ export class KanbanMetricsCalculationService {
         issueTypeBreakdown: breakdownMetrics.issueTypeBreakdown,
         priorityBreakdown: breakdownMetrics.priorityBreakdown,
         assigneeBreakdown: breakdownMetrics.assigneeBreakdown,
-      }, {
-        returning: true,
-      });
+      };
+
+      let created = false;
+      if (kanbanMetrics) {
+        // Update existing metrics
+        await kanbanMetrics.update(metricsData);
+        logger.info(`♻️ Updated existing metrics for Kanban board ${kanbanBoardId}`);
+      } else {
+        // Create new metrics
+        kanbanMetrics = await KanbanMetrics.create(metricsData);
+        created = true;
+        logger.info(`✨ Created new metrics for Kanban board ${kanbanBoardId}`);
+      }
 
       logger.info(`✅ Metrics ${created ? 'created' : 'updated'} for Kanban board ${kanbanBoardId}`);
       logger.info(`🎯 Saved metrics:`, {

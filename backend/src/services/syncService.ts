@@ -515,9 +515,12 @@ class SyncService {
         logger.info(`Syncing issues for all ${sprints.length} sprints`);
       }
       
+      let totalIssues = 0;
+      
       for (const sprint of sprints) {
         try {
           const jiraIssues = await jiraService.getIssuesForSprint(parseInt(sprint.jiraId));
+          totalIssues += jiraIssues.length;
           
           for (const jiraIssue of jiraIssues) {
             try {
@@ -576,6 +579,13 @@ class SyncService {
               }
 
               result.synced++;
+              
+              // Log progress every 100 issues
+              if (result.synced % 100 === 0) {
+                const remaining = Math.max(0, totalIssues - result.synced);
+                logger.info(`📈 Issue Sync Progress: ${result.synced} issues synced so far (${remaining}+ remaining from ${totalIssues} discovered)`);
+              }
+              
               logger.debug(`Synced issue: ${jiraIssue.key} - ${jiraIssue.fields.summary}`);
             } catch (error) {
               const errorMsg = `Failed to sync issue ${jiraIssue.key}: ${error}`;
