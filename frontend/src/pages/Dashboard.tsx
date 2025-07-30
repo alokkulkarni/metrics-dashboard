@@ -1,18 +1,20 @@
 import React from 'react'
-import { BarChart3, TrendingUp, Users, Clock, RefreshCw, AlertCircle, Calculator, Timer, Zap, Activity, Target, GitBranch } from 'lucide-react'
-import { useBoardStats, useBoards, useSyncBoards, useCalculateAllMetrics } from '../hooks/useBoards'
+import { BarChart3, TrendingUp, Users, Clock, AlertCircle, RefreshCw, Calculator, Activity, Target, Timer, Zap, GitBranch } from 'lucide-react'
+import { useBoards, useBoardStats, useSyncBoards, useSyncStatus, useCalculateAllMetrics } from '../hooks/useBoards'
 import { useAllBoardsSummary } from '../hooks/useMetrics'
-import { useKanbanMetricsSummary, useCalculateAllKanbanMetrics, useKanbanMetrics } from '../hooks/useKanbanMetrics'
-import MetricCard from '../components/MetricCard'
+import { useKanbanMetricsSummary, useKanbanMetrics, useCalculateAllKanbanMetrics } from '../hooks/useKanbanMetrics'
 import LoadingSpinner from '../components/LoadingSpinner'
+import MetricCard from '../components/MetricCard'
 import BoardPerformanceTable from '../components/BoardPerformanceTable'
+import { safeParseFloat, isValidNumeric } from '../utils/numberUtils'
 
 const Dashboard: React.FC = () => {
-  const { data: boardStats, isLoading: statsLoading, error: statsError } = useBoardStats()
   const { data: boards, isLoading: boardsLoading, error: boardsError } = useBoards()
+  const { data: boardStats, isLoading: statsLoading, error: statsError } = useBoardStats()
   const { data: boardsSummary, isLoading: summaryLoading, error: summaryError } = useAllBoardsSummary()
   const { data: kanbanSummary, isLoading: kanbanSummaryLoading, error: kanbanSummaryError } = useKanbanMetricsSummary()
   const { data: kanbanMetrics, isLoading: kanbanMetricsLoading, error: kanbanMetricsError } = useKanbanMetrics()
+  const { data: syncStatus } = useSyncStatus()
   const { mutate: syncBoards, isPending: syncPending } = useSyncBoards()
   const { mutate: calculateMetrics, isPending: calculatingMetrics } = useCalculateAllMetrics()
   const { mutate: calculateKanbanMetrics, isPending: calculatingKanbanMetrics } = useCalculateAllKanbanMetrics()
@@ -45,13 +47,13 @@ const Dashboard: React.FC = () => {
     )
   }, [boardsSummary])
 
-  // Auto-sync boards when component loads if needed
+  // Auto-sync boards when component loads if needed and sync is allowed
   React.useEffect(() => {
-    if (!autoSyncedRef.current && !syncPending && !boardsLoading && shouldSyncBoards()) {
+    if (!autoSyncedRef.current && !syncPending && !boardsLoading && syncStatus?.canSync && shouldSyncBoards()) {
       autoSyncedRef.current = true
-      syncBoards()
+      syncBoards({}) // No options = normal sync, respect throttling
     }
-  }, [syncBoards, syncPending, boardsLoading, shouldSyncBoards])
+  }, [syncBoards, syncPending, boardsLoading, shouldSyncBoards, syncStatus?.canSync])
 
   // Auto-calculate metrics when component loads if needed
   React.useEffect(() => {
@@ -97,11 +99,13 @@ const Dashboard: React.FC = () => {
 
     // Calculate average churn rate
     const boardsWithChurnRate = boardsSummary.filter(item => 
-      item.metrics?.averageChurnRate !== undefined && parseFloat(item.metrics.averageChurnRate) >= 0
+      item.metrics?.averageChurnRate !== undefined && 
+      isValidNumeric(item.metrics.averageChurnRate) && 
+      parseFloat(item.metrics.averageChurnRate) >= 0
     )
     const averageChurnRate = boardsWithChurnRate.length > 0 
       ? boardsWithChurnRate.reduce((sum, item) => {
-          return sum + parseFloat(item.metrics?.averageChurnRate || '0')
+          return sum + safeParseFloat(item.metrics?.averageChurnRate)
         }, 0) / boardsWithChurnRate.length 
       : 0
 
@@ -131,7 +135,7 @@ const Dashboard: React.FC = () => {
       averageVelocity: Math.round(averageVelocity * 10) / 10,
       totalStoryPoints: Math.round(totalStoryPoints * 10) / 10,
       completionRate: Math.round(averageCompletionRate * 10) / 10,
-      averageChurnRate: Math.round(averageChurnRate * 10) / 10,
+      averageChurnRate: isNaN(averageChurnRate) ? 0 : Math.round(averageChurnRate * 10) / 10,
       averageCycleTime: Math.round(averageCycleTime * 10) / 10,
       averageLeadTime: Math.round(averageLeadTime * 10) / 10,
     }
@@ -154,7 +158,7 @@ const Dashboard: React.FC = () => {
   }, [kanbanSummary])
 
   const handleSync = () => {
-    syncBoards()
+    syncBoards({ forceSync: true }) // Force sync when manually triggered
   }
 
   const handleCalculateMetrics = () => {
@@ -277,7 +281,14 @@ const Dashboard: React.FC = () => {
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-gray-600">Overview of your Jira metrics and performance</p>
         </div>
-        <div className="flex space-x-3">
+        <div className="flex items-center space-x-3">
+          {/* Sync Status Indicator */}
+          {syncStatus?.lastSync && (
+            <div className="text-sm text-gray-600">
+              Last sync: {new Date(syncStatus.lastSync.endTime).toLocaleTimeString()}
+            </div>
+          )}
+          
           <button
             onClick={handleCalculateMetrics}
             disabled={calculatingMetrics}
@@ -296,11 +307,23 @@ const Dashboard: React.FC = () => {
           </button>
           <button
             onClick={handleSync}
-            disabled={syncPending}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 hover:bg-blue-700 disabled:opacity-50"
+            disabled={syncPending || !syncStatus?.canSync}
+            className={`px-4 py-2 rounded-lg flex items-center space-x-2 text-white ${
+              !syncStatus?.canSync 
+                ? 'bg-gray-400 cursor-not-allowed' 
+                : 'bg-blue-600 hover:bg-blue-700'
+            } disabled:opacity-50`}
+            title={!syncStatus?.canSync ? `Sync throttled. Please wait ${syncStatus?.timeRemaining || 0} minutes.` : ''}
           >
             <RefreshCw className={`h-4 w-4 ${syncPending ? 'animate-spin' : ''}`} />
-            <span>{syncPending ? 'Syncing...' : 'Sync Data'}</span>
+            <span>
+              {syncPending 
+                ? 'Syncing...' 
+                : !syncStatus?.canSync 
+                  ? `Wait ${syncStatus?.timeRemaining || 0}m` 
+                  : 'Sync Data'
+              }
+            </span>
           </button>
         </div>
       </div>

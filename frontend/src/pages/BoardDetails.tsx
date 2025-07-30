@@ -55,7 +55,7 @@ const BoardDetails: React.FC = () => {
 
   const handleSyncBoard = () => {
     if (boardId) {
-      syncBoard(boardId)
+      syncBoard({ boardId, options: { bypassThrottle: true } }) // Individual board sync can bypass throttling
     }
   }
 
@@ -215,7 +215,12 @@ const BoardDetails: React.FC = () => {
               <div className="text-xs text-green-600 mt-1">Sprint Success</div>
             </div>
             <div className="text-center p-4 bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg border border-orange-200">
-              <div className="text-2xl font-bold text-orange-900">{parseFloat(String(boardMetrics.averageChurnRate || '0')).toFixed(1)}%</div>
+              <div className="text-2xl font-bold text-orange-900">
+                {(() => {
+                  const churnValue = parseFloat(String(boardMetrics.averageChurnRate || '0'));
+                  return isNaN(churnValue) ? '0.0' : churnValue.toFixed(1);
+                })()}%
+              </div>
               <div className="flex items-center justify-center gap-1 text-sm font-medium text-orange-700">
                 <span>Average Churn Rate</span>
                 <MetricTooltip
@@ -714,7 +719,10 @@ const BoardDetails: React.FC = () => {
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center space-x-2">
                             <span className={`text-sm ${isActive ? 'text-green-900' : 'text-gray-900'}`}>
-                              {parseFloat(String(sprintMetric.churnRate || '0')).toFixed(1)}%
+                              {(() => {
+                                const churnValue = parseFloat(String(sprintMetric.churnRate || '0'));
+                                return isNaN(churnValue) ? '0.0' : churnValue.toFixed(1);
+                              })()}%
                             </span>
                             {churnTrend.symbol && (
                               <span 
@@ -728,7 +736,10 @@ const BoardDetails: React.FC = () => {
                                 {churnTrend.symbol}
                               </span>
                             )}
-                            {parseFloat(String(sprintMetric.churnRate || '0')) > 20 && (
+                            {(() => {
+                              const churnValue = parseFloat(String(sprintMetric.churnRate || '0'));
+                              return !isNaN(churnValue) && churnValue > 20;
+                            })() && (
                               <span className="text-red-500 text-xs">⚠</span>
                             )}
                           </div>

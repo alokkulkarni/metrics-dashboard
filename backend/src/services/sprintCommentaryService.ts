@@ -1,4 +1,5 @@
 import { Sprint } from '../models/Sprint';
+import { ensureSafeNumeric, safeParseFloat } from '../utils/numberUtils';
 
 export interface SprintCommentaryData {
   commentary: string;
@@ -33,9 +34,9 @@ export class SprintCommentaryService {
   ): SprintCommentaryData {
     // Convert string values to numbers (Sequelize sometimes returns numerics as strings)
     const numericMetrics = {
-      velocity: typeof metrics.velocity === 'string' ? parseFloat(metrics.velocity) : metrics.velocity,
-      churnRate: typeof metrics.churnRate === 'string' ? parseFloat(metrics.churnRate) : metrics.churnRate,
-      completionRate: typeof metrics.completionRate === 'string' ? parseFloat(metrics.completionRate) : metrics.completionRate,
+      velocity: safeParseFloat(metrics.velocity),
+      churnRate: safeParseFloat(metrics.churnRate),
+      completionRate: safeParseFloat(metrics.completionRate),
       scopeChangePercent: typeof metrics.scopeChangePercent === 'string' ? parseFloat(metrics.scopeChangePercent) : metrics.scopeChangePercent,
       averageCycleTime: metrics.averageCycleTime ? (typeof metrics.averageCycleTime === 'string' ? parseFloat(metrics.averageCycleTime) : metrics.averageCycleTime) : undefined,
       averageLeadTime: metrics.averageLeadTime ? (typeof metrics.averageLeadTime === 'string' ? parseFloat(metrics.averageLeadTime) : metrics.averageLeadTime) : undefined,

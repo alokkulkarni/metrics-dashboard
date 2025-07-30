@@ -190,6 +190,9 @@ const BoardPerformanceTable: React.FC<BoardPerformanceTableProps> = ({
           case 'churnRate':
             aValue = parseFloat(a.metrics?.averageChurnRate || '0')
             bValue = parseFloat(b.metrics?.averageChurnRate || '0')
+            // Handle NaN values
+            aValue = isNaN(aValue) ? 0 : aValue
+            bValue = isNaN(bValue) ? 0 : bValue
             break
           case 'completionRate':
             aValue = parseFloat(a.metrics?.averageCompletionRate || '0')
@@ -608,8 +611,11 @@ const BoardPerformanceTable: React.FC<BoardPerformanceTableProps> = ({
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {item.metrics?.averageChurnRate 
-                          ? `${parseFloat(item.metrics.averageChurnRate).toFixed(1)}%`
-                          : 'N/A'
+                          ? (() => {
+                              const churnValue = parseFloat(item.metrics.averageChurnRate);
+                              return isNaN(churnValue) ? '0.0%' : `${churnValue.toFixed(1)}%`;
+                            })()
+                          : '0.0%'
                         }
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">

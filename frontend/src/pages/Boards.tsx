@@ -1,13 +1,14 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { RefreshCw, Plus, Search, Filter, X, AlertTriangle } from 'lucide-react'
-import { useBoards, useSyncBoards } from '../hooks/useBoards'
+import { useBoards, useSyncBoards, useSyncStatus } from '../hooks/useBoards'
 import { useKanbanMetrics } from '../hooks/useKanbanMetrics'
 import LoadingSpinner from '../components/LoadingSpinner'
 
 const Boards: React.FC = () => {
   const { data: boards, isLoading, error, refetch } = useBoards()
   const { data: kanbanMetrics } = useKanbanMetrics()
+  const { data: syncStatus } = useSyncStatus()
   const { mutate: syncBoards, isPending: syncPending } = useSyncBoards()
   const autoSyncedRef = useRef(false)
 
@@ -115,12 +116,12 @@ const Boards: React.FC = () => {
     return hasOutdatedBoards
   }
 
-  // Auto-trigger sync when boards data loads
+  // Auto-trigger sync when boards data loads if sync is allowed
   useEffect(() => {
-    if (boards && !autoSyncedRef.current && !syncPending && !isLoading) {
+    if (boards && !autoSyncedRef.current && !syncPending && !isLoading && syncStatus?.canSync) {
       if (shouldSyncBoards(boards)) {
         autoSyncedRef.current = true
-        syncBoards(undefined, {
+        syncBoards({}, {
           onSuccess: () => {
             refetch()
           },
@@ -131,10 +132,10 @@ const Boards: React.FC = () => {
         })
       }
     }
-  }, [boards, syncBoards, refetch, syncPending, isLoading])
+  }, [boards, syncBoards, refetch, syncPending, isLoading, syncStatus?.canSync])
 
   const handleSync = () => {
-    syncBoards(undefined, {
+    syncBoards({ forceSync: true }, {
       onSuccess: () => {
         refetch()
       }
@@ -167,14 +168,31 @@ const Boards: React.FC = () => {
           <h1 className="text-2xl font-bold text-gray-900">Boards</h1>
           <p className="text-gray-600">Manage and monitor your Jira boards</p>
         </div>
-        <div className="flex space-x-3">
+        <div className="flex items-center space-x-3">
+          {/* Sync Status Indicator */}
+          {syncStatus?.lastSync && (
+            <div className="text-sm text-gray-600">
+              Last sync: {new Date(syncStatus.lastSync.endTime).toLocaleTimeString()}
+            </div>
+          )}
+          
           <button
             onClick={handleSync}
-            disabled={syncPending}
-            className="btn-secondary flex items-center space-x-2"
+            disabled={syncPending || !syncStatus?.canSync}
+            className={`btn-secondary flex items-center space-x-2 ${
+              !syncStatus?.canSync ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
+            title={!syncStatus?.canSync ? `Sync throttled. Please wait ${syncStatus?.timeRemaining || 0} minutes.` : ''}
           >
             <RefreshCw className={`h-4 w-4 ${syncPending ? 'animate-spin' : ''}`} />
-            <span>{syncPending ? 'Syncing...' : 'Sync Boards'}</span>
+            <span>
+              {syncPending 
+                ? 'Syncing...' 
+                : !syncStatus?.canSync 
+                  ? `Wait ${syncStatus?.timeRemaining || 0}m` 
+                  : 'Sync Boards'
+              }
+            </span>
           </button>
         </div>
       </div>

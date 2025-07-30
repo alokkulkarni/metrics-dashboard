@@ -15,6 +15,14 @@ export const useBoardStats = () => {
   })
 }
 
+export const useSyncStatus = (syncType: string = 'full') => {
+  return useQuery({
+    queryKey: ['sync', 'status', syncType],
+    queryFn: () => boardService.getSyncStatus(syncType),
+    refetchInterval: 5000, // Check status every 5 seconds
+  })
+}
+
 export const useBoard = (boardId: string) => {
   return useQuery({
     queryKey: ['boards', boardId],
@@ -35,7 +43,8 @@ export const useSyncBoards = () => {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: boardService.syncBoards,
+    mutationFn: (options: { forceSync?: boolean; bypassThrottle?: boolean } = {}) => 
+      boardService.syncBoards(options),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['boards'] })
       queryClient.invalidateQueries({ queryKey: ['boards', 'stats'] })
@@ -44,6 +53,8 @@ export const useSyncBoards = () => {
       queryClient.invalidateQueries({ queryKey: ['metrics'] })
       queryClient.invalidateQueries({ queryKey: ['metrics', 'sprints'] })
       queryClient.invalidateQueries({ queryKey: ['metrics', 'boards'] })
+      // Invalidate sync status
+      queryClient.invalidateQueries({ queryKey: ['sync', 'status'] })
     },
   })
 }
@@ -52,8 +63,9 @@ export const useSyncBoard = () => {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: boardService.syncBoard,
-    onSuccess: (_, boardId) => {
+    mutationFn: ({ boardId, options }: { boardId: string; options?: { bypassThrottle?: boolean } }) => 
+      boardService.syncBoard(boardId, options),
+    onSuccess: (_, { boardId }) => {
       // Invalidate specific board data
       queryClient.invalidateQueries({ queryKey: ['boards', boardId] })
       queryClient.invalidateQueries({ queryKey: ['boards', boardId, 'details'] })
@@ -65,6 +77,8 @@ export const useSyncBoard = () => {
       queryClient.invalidateQueries({ queryKey: ['metrics'] })
       queryClient.invalidateQueries({ queryKey: ['metrics', 'sprints'] })
       queryClient.invalidateQueries({ queryKey: ['metrics', 'boards'] })
+      // Invalidate sync status
+      queryClient.invalidateQueries({ queryKey: ['sync', 'status'] })
     },
   })
 }

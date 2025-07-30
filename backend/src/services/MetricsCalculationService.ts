@@ -8,6 +8,7 @@ import { filterOutSubTasks, filterForQualityMetrics, filterDefectIssues } from '
 import { Op } from 'sequelize';
 import { SprintCommentaryService } from './sprintCommentaryService';
 import { IssueChangelogService } from './IssueChangelogService';
+import { ensureSafeNumeric, safePercentage, safeAverage } from '../utils/numberUtils';
 
 export interface CalculatedSprintMetrics {
   sprintId: number;
@@ -262,7 +263,7 @@ export class MetricsCalculationService {
           // Use totalStoryPoints as proxy for committed points (at sprint end)
           const committedStoryPoints = totalStoryPoints;
           if (committedStoryPoints > 0) {
-            churnRate = ((addedStoryPoints + removedStoryPoints) / committedStoryPoints) * 100;
+            churnRate = safePercentage(addedStoryPoints + removedStoryPoints, committedStoryPoints);
           }
           
           logger.info(`Sprint ${sprintId} churn rate calculation (changelog-based):`, {
@@ -419,14 +420,9 @@ export class MetricsCalculationService {
       }
 
       // Calculate averages
-      const averageVelocity = validSprintMetrics.reduce((sum, metrics) => 
-        sum + metrics.velocity, 0) / validSprintMetrics.length;
-
-      const averageChurnRate = validSprintMetrics.reduce((sum, metrics) => 
-        sum + metrics.churnRate, 0) / validSprintMetrics.length;
-
-      const averageCompletionRate = validSprintMetrics.reduce((sum, metrics) => 
-        sum + metrics.completionRate, 0) / validSprintMetrics.length;
+      const averageVelocity = safeAverage(validSprintMetrics.map(m => m.velocity));
+      const averageChurnRate = safeAverage(validSprintMetrics.map(m => m.churnRate));
+      const averageCompletionRate = safeAverage(validSprintMetrics.map(m => m.completionRate));
 
       const totalStoryPoints = validSprintMetrics.reduce((sum, metrics) => 
         sum + metrics.totalStoryPoints, 0);
@@ -477,8 +473,8 @@ export class MetricsCalculationService {
         }
 
         // Churn rate trend (note: higher churn rate is worse, so trend is inverted)
-        const recentAvgChurnRate = recentSprints.reduce((sum, m) => sum + m.churnRate, 0) / 3;
-        const previousAvgChurnRate = previousSprints.reduce((sum, m) => sum + m.churnRate, 0) / 3;
+        const recentAvgChurnRate = safeAverage(recentSprints.map(m => m.churnRate));
+        const previousAvgChurnRate = safeAverage(previousSprints.map(m => m.churnRate));
         
         if (recentAvgChurnRate > previousAvgChurnRate * 1.1) {
           churnRateTrend = 'up'; // Higher churn rate = worse trend
@@ -558,7 +554,7 @@ export class MetricsCalculationService {
       const [sprintMetrics] = await SprintMetrics.upsert({
         sprintId: metrics.sprintId,
         velocity: metrics.velocity,
-        churnRate: metrics.churnRate,
+        churnRate: ensureSafeNumeric(metrics.churnRate),
         completionRate: metrics.completionRate,
         teamMembers: metrics.teamMembers,
         totalStoryPoints: metrics.totalStoryPoints,
@@ -601,7 +597,7 @@ export class MetricsCalculationService {
       const [boardMetrics] = await BoardMetrics.upsert({
         boardId: metrics.boardId,
         averageVelocity: metrics.averageVelocity,
-        averageChurnRate: metrics.averageChurnRate,
+        averageChurnRate: ensureSafeNumeric(metrics.averageChurnRate),
         averageCompletionRate: metrics.averageCompletionRate,
         totalSprints: metrics.totalSprints,
         activeSprints: metrics.activeSprints,
