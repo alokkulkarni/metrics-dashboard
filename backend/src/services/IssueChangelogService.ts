@@ -370,20 +370,20 @@ export class IssueChangelogService {
         if (entry.changeType === 'sprint_added' && entry.toSprintId === sprintId) {
           // Issue added to this sprint
           addedIssues++;
-          addedStoryPoints += entry.issue?.storyPoints || 0;
+          addedStoryPoints += parseFloat(entry.issue?.storyPoints?.toString() || '0') || 0;
         } else if (entry.changeType === 'sprint_removed' && entry.fromSprintId === sprintId) {
           // Issue removed from this sprint
           removedIssues++;
-          removedStoryPoints += entry.issue?.storyPoints || 0;
+          removedStoryPoints += parseFloat(entry.issue?.storyPoints?.toString() || '0') || 0;
         } else if (entry.changeType === 'sprint_changed') {
           if (entry.toSprintId === sprintId && entry.fromSprintId !== sprintId) {
             // Issue moved to this sprint from another sprint
             addedIssues++;
-            addedStoryPoints += entry.issue?.storyPoints || 0;
+            addedStoryPoints += parseFloat(entry.issue?.storyPoints?.toString() || '0') || 0;
           } else if (entry.fromSprintId === sprintId && entry.toSprintId !== sprintId) {
             // Issue moved from this sprint to another sprint
             removedIssues++;
-            removedStoryPoints += entry.issue?.storyPoints || 0;
+            removedStoryPoints += parseFloat(entry.issue?.storyPoints?.toString() || '0') || 0;
           }
         }
       }
