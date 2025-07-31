@@ -45,7 +45,7 @@ const BoardDetails: React.FC = () => {
         })
       }
     }
-  }, [boardDetails, boardId, calculateMetrics, calculatingMetrics])
+  }, [boardDetails, boardId, calculatingMetrics]) // Removed calculateMetrics from dependencies
 
   const handleCalculateMetrics = () => {
     if (boardId) {
