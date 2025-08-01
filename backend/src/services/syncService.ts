@@ -9,7 +9,6 @@ import { KanbanBoard } from '../models/KanbanBoard';
 import { jiraService } from './jiraService';
 import { MetricsCalculationService } from './MetricsCalculationService';
 import { kanbanSyncService } from './kanbanSyncService';
-import { IssueChangelogService } from './IssueChangelogService';
 
 interface SyncOptions {
   forceSync?: boolean;
@@ -24,7 +23,6 @@ interface SyncResult {
   boards: number;
   sprints: number;
   issues: number;
-  changelogEntries: number;
   metrics: number;
   kanbanBoards: number;
   kanbanIssues: number;
@@ -45,7 +43,6 @@ class SyncService {
       boards: 0,
       sprints: 0,
       issues: 0,
-      changelogEntries: 0,
       metrics: 0,
       kanbanBoards: 0,
       kanbanIssues: 0,
@@ -112,7 +109,6 @@ class SyncService {
         // Sync issues
         const issuesResult = await this.syncIssues(options);
         result.issues = issuesResult.synced;
-        result.changelogEntries = issuesResult.changelogEntries;
         result.errors.push(...issuesResult.errors);
 
         // Calculate metrics
@@ -489,8 +485,8 @@ class SyncService {
     }
   }
 
-  private async syncIssues(options: SyncOptions): Promise<{ synced: number; errors: string[]; changelogEntries: number }> {
-    const result = { synced: 0, errors: [] as string[], changelogEntries: 0 };
+  private async syncIssues(options: SyncOptions): Promise<{ synced: number; errors: string[] }> {
+    const result = { synced: 0, errors: [] as string[] };
 
     try {
       logger.info('Syncing issues...');
@@ -515,12 +511,9 @@ class SyncService {
         logger.info(`Syncing issues for all ${sprints.length} sprints`);
       }
       
-      let totalIssues = 0;
-      
       for (const sprint of sprints) {
         try {
           const jiraIssues = await jiraService.getIssuesForSprint(parseInt(sprint.jiraId));
-          totalIssues += jiraIssues.length;
           
           for (const jiraIssue of jiraIssues) {
             try {
@@ -579,13 +572,6 @@ class SyncService {
               }
 
               result.synced++;
-              
-              // Log progress every 100 issues
-              if (result.synced % 100 === 0) {
-                const remaining = Math.max(0, totalIssues - result.synced);
-                logger.info(`📈 Issue Sync Progress: ${result.synced} issues synced so far (${remaining}+ remaining from ${totalIssues} discovered)`);
-              }
-              
               logger.debug(`Synced issue: ${jiraIssue.key} - ${jiraIssue.fields.summary}`);
             } catch (error) {
               const errorMsg = `Failed to sync issue ${jiraIssue.key}: ${error}`;
@@ -601,20 +587,6 @@ class SyncService {
       }
 
       logger.info(`Issues sync completed: ${result.synced} synced, ${result.errors.length} errors`);
-      
-      // Sync issue changelog data after issues are synced
-      try {
-        logger.info('Syncing issue changelog data...');
-        const changelogService = new IssueChangelogService();
-        const changelogResult = await changelogService.syncAllIssueChangelogs();
-        result.changelogEntries = changelogResult.addedChangelogEntries;
-        logger.info(`Issue changelog sync completed: ${changelogResult.addedChangelogEntries} entries processed`);
-      } catch (error) {
-        const errorMsg = `Failed to sync issue changelog: ${error}`;
-        logger.error(errorMsg);
-        result.errors.push(errorMsg);
-      }
-      
       return result;
     } catch (error) {
       logger.error('Failed to sync issues:', error);
@@ -796,7 +768,6 @@ class SyncService {
       boards: 0,
       sprints: 0,
       issues: 0,
-      changelogEntries: 0,
       metrics: 0,
       kanbanBoards: 0,
       kanbanIssues: 0,
@@ -842,7 +813,6 @@ class SyncService {
       boards: 0,
       sprints: 0,
       issues: 0,
-      changelogEntries: 0,
       metrics: 0,
       kanbanBoards: 0,
       kanbanIssues: 0,
@@ -888,7 +858,6 @@ class SyncService {
       boards: 0,
       sprints: 0,
       issues: 0,
-      changelogEntries: 0,
       metrics: 0,
       kanbanBoards: 0,
       kanbanIssues: 0,

@@ -7,7 +7,6 @@ import { Project } from '../models/Project';
 import { Board } from '../models/Board';
 import { Sprint } from '../models/Sprint';
 import { Issue } from '../models/Issue';
-import { IssueChangelog } from '../models/IssueChangelog';
 import { SprintMetrics } from '../models/SprintMetrics';
 import { BoardMetrics } from '../models/BoardMetrics';
 import { SyncOperation } from '../models/SyncOperation';
@@ -68,8 +67,6 @@ async function initializeModels(): Promise<void> {
   Sprint.initialize(sequelize);
   logger.debug('Initializing Issue model...');
   Issue.initialize(sequelize);
-  logger.debug('Initializing IssueChangelog model...');
-  IssueChangelog.initialize(sequelize);
   logger.debug('Initializing SprintMetrics model...');
   SprintMetrics.initialize(sequelize);
   logger.debug('Initializing BoardMetrics model...');
@@ -99,17 +96,6 @@ function defineAssociations(): void {
   // Sprint -> Issue (one-to-many)
   Sprint.hasMany(Issue, { foreignKey: 'sprintId', as: 'issues' });
   Issue.belongsTo(Sprint, { foreignKey: 'sprintId', as: 'sprint' });
-
-  // Issue -> IssueChangelog (one-to-many)
-  Issue.hasMany(IssueChangelog, { foreignKey: 'issueId', as: 'changelogs' });
-  IssueChangelog.belongsTo(Issue, { foreignKey: 'issueId', as: 'issue' });
-
-  // Sprint -> IssueChangelog associations for fromSprint and toSprint
-  Sprint.hasMany(IssueChangelog, { foreignKey: 'fromSprintId', as: 'fromChangelogs' });
-  IssueChangelog.belongsTo(Sprint, { foreignKey: 'fromSprintId', as: 'fromSprint' });
-  
-  Sprint.hasMany(IssueChangelog, { foreignKey: 'toSprintId', as: 'toChangelogs' });
-  IssueChangelog.belongsTo(Sprint, { foreignKey: 'toSprintId', as: 'toSprint' });
 
   // Sprint -> SprintMetrics (one-to-one)
   Sprint.hasOne(SprintMetrics, { foreignKey: 'sprintId', as: 'metrics' });

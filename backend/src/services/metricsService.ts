@@ -199,11 +199,11 @@ class MetricsService {
     // Quality Rate: Percentage of non-defect issues (inverse of defect leakage rate)
     const qualityRate = issues.length > 0 ? ((issues.length - totalDefects) / issues.length) * 100 : 100;
 
-    // Churn rate calculation: Without changelog data, we cannot accurately measure scope changes
-    // Setting to 0% as we cannot determine actual issues added/removed during sprint
-    // The previous calculation using (incompleteStoryPoints / totalStoryPoints) * 100
-    // was incorrectly measuring incompletion rate, not churn rate
-    const churnRate = 0;
+    // Calculate churn rate based on incomplete work (scope not delivered)
+    // This provides a practical measure of sprint instability/scope change
+    const incompleteStoryPoints = totalStoryPoints - completedStoryPoints;
+    const churnRate = totalStoryPoints > 0 ? 
+      (incompleteStoryPoints / totalStoryPoints) * 100 : 0;
     
     const scopeChangePercent = churnRate;
     const addedStoryPoints = 0;

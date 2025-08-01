@@ -4,7 +4,6 @@ import { IssueChangelog } from '../models/IssueChangelog';
 import { Sprint } from '../models/Sprint';
 import { Op } from 'sequelize';
 import axios from 'axios';
-import { config } from '../config';
 
 interface JiraChangelogItem {
   field: string;
@@ -39,9 +38,9 @@ export class IssueChangelogService {
   private jiraToken: string;
 
   constructor() {
-    this.jiraUrl = config.jira.baseUrl;
-    this.jiraEmail = config.jira.email;
-    this.jiraToken = config.jira.apiToken;
+    this.jiraUrl = process.env.JIRA_URL || '';
+    this.jiraEmail = process.env.JIRA_EMAIL || '';
+    this.jiraToken = process.env.JIRA_API_TOKEN || '';
   }
 
   /**
@@ -86,10 +85,7 @@ export class IssueChangelogService {
             const entries = await this.syncIssueChangelog(issue.key);
             processedIssues++;
             addedChangelogEntries += entries;
-            // Individual issue logging (less verbose)
-            if (entries > 0) {
-              logger.debug(`✅ Synced ${entries} changelog entries for issue ${issue.key}`);
-            }
+            logger.info(`✅ Synced ${entries} changelog entries for issue ${issue.key}`);
           } catch (error) {
             errors++;
             logger.error(`❌ Failed to sync changelog for issue ${issue.key}:`, error);
@@ -97,12 +93,6 @@ export class IssueChangelogService {
         });
 
         await Promise.all(batchPromises);
-        
-        // Log progress every 50 issues processed (more useful visibility)
-        if (processedIssues % 50 === 0 || i + batchSize >= issues.length) {
-          const remainingIssues = issues.length - processedIssues;
-          logger.info(`📈 Issue Changelog Progress: ${processedIssues}/${issues.length} issues processed (${remainingIssues} remaining), ${addedChangelogEntries} entries added, ${errors} errors`);
-        }
         
         // Add delay between batches to respect API limits
         if (i + batchSize < issues.length) {
@@ -148,29 +138,14 @@ export class IssueChangelogService {
         for (const item of history.items) {
           // Only process sprint and story points changes
           if (this.isRelevantChange(item)) {
-            // Build where clause conditionally to handle null values properly
-            const whereClause: any = {
-              issueId: issue.id,
-              changeDate: new Date(history.created),
-              field: item.field,
-            };
-
-            // Handle fromValue - use null instead of undefined for Sequelize
-            if (item.fromString !== null && item.fromString !== undefined) {
-              whereClause.fromValue = item.fromString;
-            } else {
-              whereClause.fromValue = { [Op.is]: null };
-            }
-
-            // Handle toValue - use null instead of undefined for Sequelize
-            if (item.toString !== null && item.toString !== undefined) {
-              whereClause.toValue = item.toString;
-            } else {
-              whereClause.toValue = { [Op.is]: null };
-            }
-
             const existing = await IssueChangelog.findOne({
-              where: whereClause,
+              where: {
+                issueId: issue.id,
+                changeDate: new Date(history.created),
+                field: item.field,
+                fromValue: item.fromString || undefined,
+                toValue: item.toString || undefined,
+              },
             });
 
             if (!existing) {
@@ -258,34 +233,19 @@ export class IssueChangelogService {
         storyPointsChange = toPoints - fromPoints;
       }
 
-      // Build create object conditionally to avoid undefined values
-      const createData: any = {
+      await IssueChangelog.create({
         issueId: issue.id,
         jiraIssueKey: issue.key,
         changeDate: new Date(history.created),
         field: item.field,
+        fromValue: item.fromString || undefined,
+        toValue: item.toString || undefined,
+        fromSprintId: fromSprintId || undefined,
+        toSprintId: toSprintId || undefined,
         changeType,
         author: history.author.displayName,
-      };
-
-      // Only add fields if they have actual values
-      if (item.fromString !== null && item.fromString !== undefined) {
-        createData.fromValue = item.fromString;
-      }
-      if (item.toString !== null && item.toString !== undefined) {
-        createData.toValue = item.toString;
-      }
-      if (fromSprintId !== null && fromSprintId !== undefined) {
-        createData.fromSprintId = fromSprintId;
-      }
-      if (toSprintId !== null && toSprintId !== undefined) {
-        createData.toSprintId = toSprintId;
-      }
-      if (storyPointsChange !== null && storyPointsChange !== undefined) {
-        createData.storyPointsChange = storyPointsChange;
-      }
-
-      await IssueChangelog.create(createData);
+        storyPointsChange: storyPointsChange || undefined,
+      });
 
       logger.debug(`📝 Created changelog entry for ${issue.key}: ${changeType}`);
     } catch (error) {
@@ -370,20 +330,20 @@ export class IssueChangelogService {
         if (entry.changeType === 'sprint_added' && entry.toSprintId === sprintId) {
           // Issue added to this sprint
           addedIssues++;
-          addedStoryPoints += parseFloat(entry.issue?.storyPoints?.toString() || '0') || 0;
+          addedStoryPoints += entry.issue?.storyPoints || 0;
         } else if (entry.changeType === 'sprint_removed' && entry.fromSprintId === sprintId) {
           // Issue removed from this sprint
           removedIssues++;
-          removedStoryPoints += parseFloat(entry.issue?.storyPoints?.toString() || '0') || 0;
+          removedStoryPoints += entry.issue?.storyPoints || 0;
         } else if (entry.changeType === 'sprint_changed') {
           if (entry.toSprintId === sprintId && entry.fromSprintId !== sprintId) {
             // Issue moved to this sprint from another sprint
             addedIssues++;
-            addedStoryPoints += parseFloat(entry.issue?.storyPoints?.toString() || '0') || 0;
+            addedStoryPoints += entry.issue?.storyPoints || 0;
           } else if (entry.fromSprintId === sprintId && entry.toSprintId !== sprintId) {
             // Issue moved from this sprint to another sprint
             removedIssues++;
-            removedStoryPoints += parseFloat(entry.issue?.storyPoints?.toString() || '0') || 0;
+            removedStoryPoints += entry.issue?.storyPoints || 0;
           }
         }
       }

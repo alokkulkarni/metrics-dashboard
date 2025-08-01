@@ -29,7 +29,7 @@ const KanbanBoardDetails: React.FC = () => {
         }
       })
     }
-  }, [kanbanMetrics, isLoading, boardId, calculatingMetrics]) // Removed calculateMetrics from dependencies
+  }, [kanbanMetrics, isLoading, boardId, calculateMetrics, calculatingMetrics])
 
   const handleCalculateMetrics = () => {
     if (boardId) {

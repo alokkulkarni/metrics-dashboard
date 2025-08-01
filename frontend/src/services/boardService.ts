@@ -161,21 +161,6 @@ export interface BoardSummaryResponse {
   }
 }
 
-export interface SyncStatus {
-  syncType: string
-  lastSync: {
-    id: number
-    syncType: string
-    startTime: string
-    endTime: string
-    status: string
-    results: any
-  } | null
-  canSync: boolean
-  timeRemaining: number
-  nextAllowedSync: string | null
-}
-
 export const boardService = {
   // Get all boards
   getBoards: async (): Promise<Board[]> => {
@@ -195,20 +180,16 @@ export const boardService = {
     return response.data.data
   },
 
-  // Get sync status
-  getSyncStatus: async (syncType: string = 'full'): Promise<SyncStatus> => {
-    const response = await api.get(`/sync/status?syncType=${syncType}`)
-    return response.data.data
+  // Sync all boards from Jira
+  syncBoards: async (): Promise<void> => {
+    await api.post('/sync')
   },
 
-  // Sync all boards from Jira (with optional force flag)
-  syncBoards: async (options: { forceSync?: boolean; bypassThrottle?: boolean } = {}): Promise<void> => {
-    await api.post('/sync', options)
-  },
-
-  // Sync a specific board from Jira (with optional force flag)
-  syncBoard: async (boardId: string, options: { bypassThrottle?: boolean } = {}): Promise<void> => {
-    await api.post(`/sync/board/${boardId}`, options)
+  // Sync a specific board from Jira
+  syncBoard: async (boardId: string): Promise<void> => {
+    await api.post('/sync', {
+      boardIds: [parseInt(boardId)]
+    })
   },
 
   // Get sprints for a board

@@ -3,18 +3,16 @@
  * This table tracks all changes to issues, especially sprint movements for churn rate calculations
  */
 
-const { DataTypes } = require('sequelize');
-
 module.exports = {
   up: async (queryInterface, Sequelize) => {
     await queryInterface.createTable('issue_changelog', {
       id: {
-        type: DataTypes.INTEGER,
+        type: Sequelize.INTEGER,
         autoIncrement: true,
         primaryKey: true,
       },
       issue_id: {
-        type: DataTypes.INTEGER,
+        type: Sequelize.INTEGER,
         allowNull: false,
         references: {
           model: 'issues',
@@ -24,27 +22,27 @@ module.exports = {
         onDelete: 'CASCADE',
       },
       jira_issue_key: {
-        type: DataTypes.STRING(50),
+        type: Sequelize.STRING(50),
         allowNull: false,
       },
       change_date: {
-        type: DataTypes.DATE,
+        type: Sequelize.DATE,
         allowNull: false,
       },
       field: {
-        type: DataTypes.STRING(100),
+        type: Sequelize.STRING(100),
         allowNull: false,
       },
       from_value: {
-        type: DataTypes.TEXT,
+        type: Sequelize.TEXT,
         allowNull: true,
       },
       to_value: {
-        type: DataTypes.TEXT,
+        type: Sequelize.TEXT,
         allowNull: true,
       },
       from_sprint_id: {
-        type: DataTypes.INTEGER,
+        type: Sequelize.INTEGER,
         allowNull: true,
         references: {
           model: 'sprints',
@@ -54,7 +52,7 @@ module.exports = {
         onDelete: 'SET NULL',
       },
       to_sprint_id: {
-        type: DataTypes.INTEGER,
+        type: Sequelize.INTEGER,
         allowNull: true,
         references: {
           model: 'sprints',
@@ -64,24 +62,26 @@ module.exports = {
         onDelete: 'SET NULL',
       },
       change_type: {
-        type: DataTypes.ENUM('sprint_added', 'sprint_removed', 'sprint_changed', 'status_changed', 'story_points_changed', 'other'),
+        type: Sequelize.ENUM('sprint_added', 'sprint_removed', 'sprint_changed', 'status_changed', 'story_points_changed', 'other'),
         allowNull: false,
       },
       author: {
-        type: DataTypes.STRING(255),
+        type: Sequelize.STRING(255),
         allowNull: true,
       },
       story_points_change: {
-        type: DataTypes.DECIMAL(10, 2),
+        type: Sequelize.DECIMAL(10, 2),
         allowNull: true,
       },
       created_at: {
-        type: DataTypes.DATE,
+        type: Sequelize.DATE,
         allowNull: false,
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'),
       },
       updated_at: {
-        type: DataTypes.DATE,
+        type: Sequelize.DATE,
         allowNull: false,
+        defaultValue: Sequelize.literal('CURRENT_TIMESTAMP'),
       },
     });
 
