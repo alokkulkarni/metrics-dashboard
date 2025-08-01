@@ -1,9 +1,10 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, TrendingUp, Target, Clock, Users, Calculator, AlertTriangle, RefreshCw } from 'lucide-react'
+import { ArrowLeft, TrendingUp, Target, Clock, Users, Calculator, AlertTriangle, RefreshCw, BarChart3 } from 'lucide-react'
 import { useBoardDetails, useCalculateBoardMetrics, useSyncBoard } from '../hooks/useBoards'
 import MetricCard from '../components/MetricCard'
 import MetricTooltip from '../components/MetricTooltip'
+import TrendsVisualization from '../components/TrendsVisualization'
 import { METRIC_DEFINITIONS } from '../constants/metricDefinitions'
 import LoadingSpinner from '../components/LoadingSpinner'
 import '../styles/BoardDetails.css'
@@ -14,6 +15,7 @@ const BoardDetails: React.FC = () => {
   const { mutate: calculateMetrics, isPending: calculatingMetrics } = useCalculateBoardMetrics()
   const { mutate: syncBoard, isPending: syncPending } = useSyncBoard()
   const autoCalculatedRef = useRef(false)
+  const [showTrendsVisualization, setShowTrendsVisualization] = useState(false)
 
   // Helper function to check if metrics need updating
   const shouldUpdateMetrics = (boardMetrics: any, summary: any) => {
@@ -362,6 +364,20 @@ const BoardDetails: React.FC = () => {
                   </span>
                 ))}
               </div>
+            </div>
+          )}
+          
+          {/* Trends Visualization Button */}
+          {boardDetails?.sprints.withMetrics && boardDetails.sprints.withMetrics.length > 1 && (
+            <div className="mt-6 flex justify-center">
+              <button
+                onClick={() => setShowTrendsVisualization(true)}
+                className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg"
+                aria-label="View sprint trends visualization"
+              >
+                <BarChart3 className="h-5 w-5 mr-2" />
+                View Sprint Trends
+              </button>
             </div>
           )}
         </div>
@@ -978,6 +994,15 @@ const BoardDetails: React.FC = () => {
             This board doesn't have any sprints yet.
           </p>
         </div>
+      )}
+      
+      {/* Trends Visualization Modal */}
+      {showTrendsVisualization && boardDetails?.sprints.withMetrics && (
+        <TrendsVisualization
+          sprintMetrics={boardDetails.sprints.withMetrics}
+          boardName={boardDetails.board.name}
+          onClose={() => setShowTrendsVisualization(false)}
+        />
       )}
     </div>
   )
