@@ -1,0 +1,286 @@
+# Kubernetes Manifests for Direct Deployment
+# Use these if you prefer kubectl over Helm
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: metrics-dashboard
+  labels:
+    name: metrics-dashboard
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: metrics-dashboard-secret
+  namespace: metrics-dashboard
+type: Opaque
+stringData:
+  db-password: "postgres"
+  jwt-secret: "your-jwt-secret-change-in-production"
+  jira-api-token: "your-jira-api-token"
+  jira-email: "your-email@company.com"
+  jira-base-url: "https://your-company.atlassian.net"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: metrics-dashboard-config
+  namespace: metrics-dashboard
+data:
+  NODE_ENV: "production"
+  DB_HOST: "localhost"
+  DB_PORT: "5432"
+  DB_NAME: "metrics_dashboard"
+  DB_USER: "postgres"
+  PORT: "3001"
+  REACT_APP_API_URL: "http://localhost:3001"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: metrics-dashboard-logs
+  namespace: metrics-dashboard
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: metrics-dashboard-postgres
+  namespace: metrics-dashboard
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metrics-dashboard
+  namespace: metrics-dashboard
+  labels:
+    app: metrics-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: metrics-dashboard
+  template:
+    metadata:
+      labels:
+        app: metrics-dashboard
+    spec:
+      securityContext:
+        fsGroup: 1001
+        runAsNonRoot: true
+        runAsUser: 1001
+      containers:
+        # Frontend container (nginx + React)
+        - name: frontend
+          image: metrics-dashboard-frontend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            runAsUser: 1001
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log/nginx
+              
+        # Backend container (Node.js API)
+        - name: backend
+          image: metrics-dashboard-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: api
+              containerPort: 3001
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: metrics-dashboard-config
+                  key: NODE_ENV
+            - name: PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: metrics-dashboard-config
+                  key: PORT
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: metrics-dashboard-config
+                  key: DB_HOST
+            - name: DB_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: metrics-dashboard-config
+                  key: DB_PORT
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: metrics-dashboard-config
+                  key: DB_NAME
+            - name: DB_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: metrics-dashboard-config
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: metrics-dashboard-secret
+                  key: db-password
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: metrics-dashboard-secret
+                  key: jwt-secret
+            - name: JIRA_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: metrics-dashboard-secret
+                  key: jira-api-token
+            - name: JIRA_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: metrics-dashboard-secret
+                  key: jira-email
+            - name: JIRA_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: metrics-dashboard-secret
+                  key: jira-base-url
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3001
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3001
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 3001
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            runAsUser: 1001
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: logs
+              mountPath: /app/logs
+            
+        # PostgreSQL container (for development/minikube)
+        - name: postgres
+          image: postgres:15-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+              protocol: TCP
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: metrics-dashboard-config
+                  key: DB_NAME
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: metrics-dashboard-config
+                  key: DB_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: metrics-dashboard-secret
+                  key: db-password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            runAsUser: 1001
+          resources:
+            limits:
+              cpu: 250m
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+        
+      volumes:
+        - name: logs
+          persistentVolumeClaim:
+            claimName: metrics-dashboard-logs
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: metrics-dashboard-postgres
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metrics-dashboard
+  namespace: metrics-dashboard
+  labels:
+    app: metrics-dashboard
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+      name: http
+  selector:
+    app: metrics-dashboard

@@ -1,278 +1,130 @@
 # Default values for metrics-dashboard
-# This is a YAML-formatted file.
+replicaCount: 1
 
-# Global configuration
-global:
-  imageRegistry: "your-acr.azurecr.io"
-  imagePullSecrets: []
-  storageClass: "managed-csi"
-
-# Application configuration
-app:
-  name: metrics-dashboard
-  version: "1.0.0"
-  environment: production
-
-# Image configuration
 image:
-  frontend:
-    repository: metrics-dashboard-frontend
-    tag: "latest"
-    pullPolicy: Always
-  backend:
-    repository: metrics-dashboard-backend
-    tag: "latest"
-    pullPolicy: Always
+  repository: metrics-dashboard
+  tag: v2
+  pullPolicy: IfNotPresent
 
-# Replica configuration
-replicaCount: 3
-maxReplicas: 10
-minReplicas: 3
-
-# Resource configuration
-resources:
-  frontend:
-    requests:
-      memory: "128Mi"
-      cpu: "100m"
-    limits:
-      memory: "512Mi"
-      cpu: "500m"
-  backend:
-    requests:
-      memory: "256Mi"
-      cpu: "200m"
-    limits:
-      memory: "1Gi"
-      cpu: "1000m"
-
-# Service configuration
 service:
   type: ClusterIP
-  ports:
-    http: 80
-    api: 3001
-  annotations: {}
+  port: 80
+  targetPort: 80
 
-# Ingress configuration
 ingress:
   enabled: true
-  className: "nginx"  # or "azure/application-gateway"
+  className: "nginx"
   annotations:
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/rate-limit: "100"
-    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    nginx.ingress.kubernetes.io/rewrite-target: /
   hosts:
-    - host: metrics-dashboard.example.com
+    - host: metrics-dashboard.local
       paths:
         - path: /
           pathType: Prefix
-          port: 80
-        - path: /api
-          pathType: Prefix
-          port: 3001
-  tls:
-    - secretName: metrics-dashboard-tls
-      hosts:
-        - metrics-dashboard.example.com
+  tls: []
 
-# Azure-specific configuration
-azure:
-  # Azure Database for PostgreSQL
-  database:
-    enabled: true
-    host: "metrics-db-server.postgres.database.azure.com"
-    port: 5432
-    name: "metrics_dashboard"
-    user: "azureuser"
-    sslMode: "require"
-  
-  # Azure Key Vault
-  keyVault:
-    enabled: true
-    name: "metrics-kv"
-    tenantId: ""  # Your Azure Tenant ID
-    resourceGroup: "metrics-dashboard-rg"
-    subscriptionId: ""  # Your Azure Subscription ID
-  
-  # Azure Container Registry
-  acr:
-    name: "your-acr"
-    resourceGroup: "metrics-dashboard-rg"
-  
-  # Azure Monitor / Application Insights
-  monitoring:
-    enabled: true
-    applicationInsightsKey: ""
-    logAnalyticsWorkspaceId: ""
-
-# Security configuration
-security:
-  podSecurityContext:
-    runAsNonRoot: true
-    runAsUser: 1001
-    runAsGroup: 1001
-    fsGroup: 1001
-    seccompProfile:
-      type: RuntimeDefault
-  
-  containerSecurityContext:
-    allowPrivilegeEscalation: false
-    readOnlyRootFilesystem: true
-    capabilities:
-      drop:
-        - ALL
-      add:
-        - NET_BIND_SERVICE
-
-# Storage configuration
-persistence:
-  enabled: true
-  logs:
-    size: 10Gi
-    storageClass: "managed-csi"
-    accessMode: ReadWriteOnce
-  tmp:
-    size: 5Gi
-    storageClass: "managed-csi"
-    accessMode: ReadWriteOnce
-  shared:
-    enabled: false
-    size: 5Gi
-    storageClass: "azurefile-csi"
-    accessMode: ReadWriteMany
-
-# Autoscaling configuration
-autoscaling:
-  enabled: true
-  hpa:
-    minReplicas: 3
-    maxReplicas: 10
-    targetCPUUtilizationPercentage: 70
-    targetMemoryUtilizationPercentage: 80
-  vpa:
-    enabled: false
-    updateMode: "Auto"
-
-# Health checks configuration
-healthChecks:
-  livenessProbe:
-    enabled: true
-    initialDelaySeconds: 30
-    periodSeconds: 10
-    timeoutSeconds: 5
-    failureThreshold: 3
-  readinessProbe:
-    enabled: true
-    initialDelaySeconds: 5
-    periodSeconds: 5
-    timeoutSeconds: 3
-    failureThreshold: 3
-  startupProbe:
-    enabled: true
-    initialDelaySeconds: 10
-    periodSeconds: 10
-    timeoutSeconds: 5
-    failureThreshold: 30
-
-# Configuration from environment variables
-config:
-  nodeEnv: "production"
-  logLevel: "info"
-  jira:
-    syncIntervalHours: 2
-    autoSyncEnabled: true
-  jwt:
-    expiresIn: "24h"
-  cors:
-    origin: "https://metrics-dashboard.example.com"
-    credentials: true
-  rateLimiting:
-    windowMs: 900000  # 15 minutes
-    maxRequests: 100
-
-# Secrets configuration (managed by Azure Key Vault)
-secrets:
-  # These will be populated from Azure Key Vault
-  dbPassword: ""
-  jwtSecret: ""
-  jiraApiToken: ""
-  jiraEmail: ""
-  jiraBaseUrl: ""
-
-# Service Account configuration
-serviceAccount:
-  create: true
-  name: "metrics-dashboard-sa"
-  annotations:
-    azure.workload.identity/client-id: ""  # Azure Managed Identity Client ID
-    azure.workload.identity/tenant-id: ""  # Azure Tenant ID
-
-# RBAC configuration
-rbac:
-  create: true
-  clusterRole: false
-
-# Network policies
-networkPolicies:
-  enabled: true
-  ingressRules:
-    - from:
-      - namespaceSelector:
-          matchLabels:
-            name: ingress-nginx
-      - podSelector:
-          matchLabels:
-            app: metrics-dashboard
-      ports:
-      - protocol: TCP
-        port: 80
-      - protocol: TCP
-        port: 3001
-
-# Monitoring configuration
-monitoring:
-  enabled: true
-  serviceMonitor:
-    enabled: true
-    interval: 30s
-    scrapeTimeout: 10s
-  prometheusRule:
-    enabled: true
-  grafana:
-    enabled: true
-    dashboard:
-      enabled: true
-
-# Pod Disruption Budget
-podDisruptionBudget:
-  enabled: true
-  minAvailable: 2
-
-# Node affinity and tolerations
-affinity:
-  podAntiAffinity:
-    enabled: true
-    type: "soft"  # or "hard"
-
-tolerations: []
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
 
 nodeSelector: {}
+tolerations: []
+affinity: {}
 
-# External dependencies
-postgresql:
-  enabled: false  # We use Azure Database for PostgreSQL
+# Single-pod configuration
+singlePod:
+  enabled: true
+  frontend:
+    port: 80
+  backend:
+    port: 3000
+    nodeEnv: production
+  database:
+    type: embedded
+    embedded:
+      enabled: true
+      port: 5432
+      database: metrics_dashboard
+      username: postgres
+      password: postgres123
+    external:
+      enabled: false
+      host: ""
+      port: 5432
+      database: metrics_dashboard
+      username: ""
+      password: ""
 
-redis:
-  enabled: false  # Optional caching layer
+# Secrets
+secrets:
+  dbPassword: postgres123
+  jwtSecret: metrics-dashboard-super-secret-jwt-key-change-in-production
+  jira:
+    baseUrl: "https://enterprisevm.atlassian.net"
+    email: "alok.kulkarni@virginmoney.com"
+    apiToken: "ATATT3xFfGF0yel0txV-Xu1Ccb47uCLpgp_g0W6CJOLp-w6kr-eFmKrkkwFV7D5cHf3dJrDTOEOHUCLH_F3SHFIycfV8UbAtiAiPcSiOAxr2xAxMyJjMNzHaxImqLLgc99byjBjroNsI68cV3T3OfyD9WnmHXwyLKEyBN2dZiv3WThTNb16U5-E=9FFBF201"
 
-# Custom labels and annotations
-labels: {}
-annotations: {}
 
-# Pod annotations
-podAnnotations:
-  prometheus.io/scrape: "true"
-  prometheus.io/port: "3001"
-  prometheus.io/path: "/metrics"
+# Environment variables
+env:
+  NODE_ENV: production
+  PORT: "3000"
+  LOG_LEVEL: info
+  LOG_FILE: /var/log/app.log
+  FRONTEND_URL: http://localhost
+  ALLOWED_ORIGINS: "http://localhost,http://localhost:3000,http://localhost:80,http://localhost:8080,http://localhost:8081,http://localhost:8082,http://localhost:8083,http://metrics-dashboard.local,https://metrics-dashboard.local"
+  CORS_ORIGIN: "http://localhost,http://localhost:3000,http://localhost:80,http://localhost:8080,http://localhost:8081,http://localhost:8082,http://localhost:8083,http://metrics-dashboard.local,https://metrics-dashboard.local"
+  DB_HOST: localhost
+  DB_PORT: "5432"
+  DB_NAME: metrics_dashboard
+  DB_USER: postgres
+  DB_SSL: "false"
+  DATABASE_URL: "postgresql://postgres:postgres123@localhost:5432/metrics_dashboard"
+  JWT_EXPIRES_IN: 24h
+  RATE_LIMIT_WINDOW_MS: "900000"
+  RATE_LIMIT_MAX_REQUESTS: "100"
+  JIRA_SYNC_INTERVAL_HOURS: "2"
+  JIRA_AUTO_SYNC_ENABLED: "true"
+  CONCURRENT_SYNC_ENABLED: "true"
+  SYNC_MAX_WORKERS: "4"
+  SYNC_MAX_CONCURRENT_BOARDS: "8"
+  SYNC_BATCH_SIZE: "5"
+  SYNC_DELAY_BETWEEN_BATCHES: "2000"
+  SYNC_CONCURRENT_THRESHOLD: "20"
+  SYNC_INTERVAL_HOURS: "24"
+  MAX_CONCURRENT_SYNC: "5"
+  SYNC_TIMEOUT_MS: "300000"
+
+# Persistence
+persistence:
+  enabled: true
+  accessMode: ReadWriteOnce
+  size: 8Gi
+  storageClass: ""
+
+# Autoscaling
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+
+# Service account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+# Pod security context
+podSecurityContext:
+  fsGroup: 1000

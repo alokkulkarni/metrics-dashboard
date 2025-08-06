@@ -1,7 +1,8 @@
 import axios from 'axios'
 import { logger } from '../utils/logger'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'
+// Use relative paths for API calls - this will go through nginx proxy
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
 const api = axios.create({
   baseURL: `${API_BASE_URL}/api`,

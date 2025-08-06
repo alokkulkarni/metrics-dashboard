@@ -1,42 +1,17 @@
 apiVersion: v2
 name: metrics-dashboard
-description: A Helm chart for Metrics Dashboard application on Azure Kubernetes Service
+description: A Helm chart for Metrics Dashboard - Full-stack React/Node.js application for Jira metrics
 type: application
-version: 1.0.0
+version: 0.1.0
 appVersion: "1.0.0"
-home: https://github.com/alokkulkarni/metrics-dashboard
-sources:
-  - https://github.com/alokkulkarni/metrics-dashboard
-maintainers:
-  - name: Platform Team
-    email: platform-team@company.com
 keywords:
   - metrics
   - dashboard
   - jira
   - analytics
-icon: https://raw.githubusercontent.com/alokkulkarni/metrics-dashboard/main/assets/icon.png
-annotations:
-  category: Analytics
-  artifacthub.io/license: MIT
-  artifacthub.io/operator: "false"
-  artifacthub.io/prerelease: "false"
-  artifacthub.io/containsSecurityUpdates: "false"
-  artifacthub.io/changes: |
-    - Initial release
-    - Support for Azure Database for PostgreSQL
-    - Azure Key Vault integration
-    - Production-ready security configurations
-dependencies:
-  - name: postgresql
-    version: "12.1.0"
-    repository: "https://charts.bitnami.com/bitnami"
-    condition: postgresql.enabled
-    tags:
-      - database
-  - name: redis
-    version: "17.3.0"
-    repository: "https://charts.bitnami.com/bitnami"
-    condition: redis.enabled
-    tags:
-      - cache
+home: https://github.com/alokkulkarni/metrics-dashboard
+sources:
+  - https://github.com/alokkulkarni/metrics-dashboard
+maintainers:
+  - name: Alok Kulkarni
+    email: alok@example.com
