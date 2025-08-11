@@ -246,11 +246,20 @@ export class MetricsCalculationService {
       try {
         // Get actual sprint changes from changelog if sprint dates are available
         if (sprint.startDate && sprint.endDate) {
+          // Ensure dates are Date objects
+          const startDate = sprint.startDate instanceof Date ? sprint.startDate : new Date(sprint.startDate);
+          const endDate = sprint.endDate instanceof Date ? sprint.endDate : new Date(sprint.endDate);
+
+          // Validate dates
+          if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+            throw new Error(`Invalid sprint dates: startDate=${sprint.startDate}, endDate=${sprint.endDate}`);
+          }
+
           const changelogService = new IssueChangelogService();
           const sprintChanges = await changelogService.getSprintChangelogForChurn(
             sprintId, 
-            sprint.startDate, 
-            sprint.endDate
+            startDate, 
+            endDate
           );
           
           addedStoryPoints = sprintChanges.addedStoryPoints;
@@ -266,8 +275,8 @@ export class MetricsCalculationService {
           }
           
           logger.info(`Sprint ${sprintId} churn rate calculation (changelog-based):`, {
-            sprintStartDate: sprint.startDate,
-            sprintEndDate: sprint.endDate,
+            sprintStartDate: startDate.toISOString(),
+            sprintEndDate: endDate.toISOString(),
             addedStoryPoints,
             removedStoryPoints,
             addedIssues,

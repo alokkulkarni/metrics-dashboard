@@ -1,9 +1,10 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, TrendingUp, Target, Clock, Users, Calculator, AlertTriangle, RefreshCw } from 'lucide-react'
+import { ArrowLeft, TrendingUp, Target, Clock, Users, Calculator, AlertTriangle, RefreshCw, BarChart3, Eye, EyeOff } from 'lucide-react'
 import { useBoardDetails, useCalculateBoardMetrics, useSyncBoard } from '../hooks/useBoards'
 import MetricCard from '../components/MetricCard'
 import MetricTooltip from '../components/MetricTooltip'
+import MetricsChart from '../components/MetricsChart'
 import { METRIC_DEFINITIONS } from '../constants/metricDefinitions'
 import LoadingSpinner from '../components/LoadingSpinner'
 import '../styles/BoardDetails.css'
@@ -14,6 +15,7 @@ const BoardDetails: React.FC = () => {
   const { mutate: calculateMetrics, isPending: calculatingMetrics } = useCalculateBoardMetrics()
   const { mutate: syncBoard, isPending: syncPending } = useSyncBoard()
   const autoCalculatedRef = useRef(false)
+  const [showCharts, setShowCharts] = useState(false)
 
   // Helper function to check if metrics need updating
   const shouldUpdateMetrics = (boardMetrics: any, summary: any) => {
@@ -156,6 +158,15 @@ const BoardDetails: React.FC = () => {
             <RefreshCw className={`h-4 w-4 ${syncPending ? 'animate-spin' : ''}`} />
             <span>{syncPending ? 'Syncing...' : 'Sync Board'}</span>
           </button>
+          {boardDetails?.sprints?.withMetrics?.length > 1 && (
+            <button
+              onClick={() => setShowCharts(!showCharts)}
+              className="bg-purple-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 hover:bg-purple-700"
+            >
+              {showCharts ? <EyeOff className="h-4 w-4" /> : <BarChart3 className="h-4 w-4" />}
+              <span>{showCharts ? 'Hide Charts' : 'View Charts'}</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -370,6 +381,23 @@ const BoardDetails: React.FC = () => {
                 Click "Calculate Metrics" to generate performance metrics for this board.
               </p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Charts Section */}
+      {showCharts && boardDetails?.sprints?.withMetrics && boardDetails.sprints.withMetrics.length > 1 && (
+        <div className="space-y-6">
+          {/* Single Comprehensive Chart */}
+          <div className="bg-white p-6 rounded-lg shadow border">
+            <h2 className="text-lg font-semibold text-gray-900 mb-6">Sprint Metrics Visualization</h2>
+            <p className="text-sm text-gray-600 mb-4">Comprehensive view showing all sprint metrics and trends</p>
+            
+            {/* Single Chart with All Parameters */}
+            <MetricsChart
+              sprintMetrics={boardDetails.sprints.withMetrics}
+              chartType="overview"
+            />
           </div>
         </div>
       )}

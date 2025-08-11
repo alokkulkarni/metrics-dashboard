@@ -300,18 +300,61 @@ export class IssueChangelogService {
     removedIssues: number;
   }> {
     try {
+      // Validate and convert input parameters
+      if (!sprintId || sprintId <= 0) {
+        throw new Error(`Invalid sprintId: ${sprintId}`);
+      }
+      
+      if (!sprintStartDate || !sprintEndDate) {
+        throw new Error(`Invalid date parameters: startDate=${sprintStartDate}, endDate=${sprintEndDate}`);
+      }
+
+      // Ensure dates are Date objects
+      const startDate = sprintStartDate instanceof Date ? sprintStartDate : new Date(sprintStartDate);
+      const endDate = sprintEndDate instanceof Date ? sprintEndDate : new Date(sprintEndDate);
+
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        throw new Error(`Invalid date objects: startDate=${startDate}, endDate=${endDate}`);
+      }
+
+      logger.info(`🔍 Querying changelog for sprint ${sprintId} between ${startDate.toISOString()} and ${endDate.toISOString()}`);
+
+      // Check if IssueChangelog table has any data
+      try {
+        const changelogCount = await IssueChangelog.count();
+        logger.info(`📊 IssueChangelog table contains ${changelogCount} entries`);
+        
+        if (changelogCount === 0) {
+          logger.warn(`No changelog data available, returning zero churn for sprint ${sprintId}`);
+          return {
+            addedStoryPoints: 0,
+            removedStoryPoints: 0,
+            addedIssues: 0,
+            removedIssues: 0,
+          };
+        }
+      } catch (countError) {
+        logger.error('Error counting changelog entries:', countError);
+        const errorMessage = countError instanceof Error ? countError.message : 'Unknown error';
+        throw new Error(`Cannot access IssueChangelog table: ${errorMessage}`);
+      }
+
       // Get all changelog entries for this sprint within the sprint period
-      const changelogEntries = await IssueChangelog.findAll({
-        where: {
-          changeDate: {
-            [Op.gte]: sprintStartDate,
-            [Op.lte]: sprintEndDate,
-          },
-          [Op.or]: [
-            { fromSprintId: sprintId },
-            { toSprintId: sprintId },
-          ],
+      const whereConditions = {
+        changeDate: {
+          [Op.gte]: startDate,
+          [Op.lte]: endDate,
         },
+        [Op.or]: [
+          { fromSprintId: sprintId },
+          { toSprintId: sprintId },
+        ],
+      };
+
+      logger.debug('Query conditions:', JSON.stringify(whereConditions, null, 2));
+
+      const changelogEntries = await IssueChangelog.findAll({
+        where: whereConditions,
         include: [
           {
             model: Issue,
