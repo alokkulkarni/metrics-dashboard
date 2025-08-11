@@ -38,7 +38,7 @@ export class IssueChangelogService {
   private jiraToken: string;
 
   constructor() {
-    this.jiraUrl = process.env.JIRA_URL || '';
+    this.jiraUrl = process.env.JIRA_BASE_URL || process.env.JIRA_URL || '';
     this.jiraEmail = process.env.JIRA_EMAIL || '';
     this.jiraToken = process.env.JIRA_API_TOKEN || '';
   }
@@ -138,14 +138,22 @@ export class IssueChangelogService {
         for (const item of history.items) {
           // Only process sprint and story points changes
           if (this.isRelevantChange(item)) {
+            // Build where condition excluding null/undefined values
+            const whereCondition: any = {
+              issueId: issue.id,
+              changeDate: new Date(history.created),
+              field: item.field,
+            };
+
+            if (item.fromString) {
+              whereCondition.fromValue = item.fromString;
+            }
+            if (item.toString) {
+              whereCondition.toValue = item.toString;
+            }
+
             const existing = await IssueChangelog.findOne({
-              where: {
-                issueId: issue.id,
-                changeDate: new Date(history.created),
-                field: item.field,
-                fromValue: item.fromString || undefined,
-                toValue: item.toString || undefined,
-              },
+              where: whereCondition,
             });
 
             if (!existing) {
@@ -233,19 +241,23 @@ export class IssueChangelogService {
         storyPointsChange = toPoints - fromPoints;
       }
 
-      await IssueChangelog.create({
+      // Build the create data, only including fields with values
+      const createData: any = {
         issueId: issue.id,
         jiraIssueKey: issue.key,
         changeDate: new Date(history.created),
         field: item.field,
-        fromValue: item.fromString || undefined,
-        toValue: item.toString || undefined,
-        fromSprintId: fromSprintId || undefined,
-        toSprintId: toSprintId || undefined,
         changeType,
         author: history.author.displayName,
-        storyPointsChange: storyPointsChange || undefined,
-      });
+      };
+
+      if (item.fromString) createData.fromValue = item.fromString;
+      if (item.toString) createData.toValue = item.toString;
+      if (fromSprintId) createData.fromSprintId = fromSprintId;
+      if (toSprintId) createData.toSprintId = toSprintId;
+      if (storyPointsChange !== null) createData.storyPointsChange = storyPointsChange;
+
+      await IssueChangelog.create(createData);
 
       logger.debug(`📝 Created changelog entry for ${issue.key}: ${changeType}`);
     } catch (error) {
@@ -364,29 +376,58 @@ export class IssueChangelogService {
         ],
       });
 
+      logger.info(`📊 Found ${changelogEntries.length} changelog entries for sprint ${sprintId}`);
+
       let addedStoryPoints = 0;
       let removedStoryPoints = 0;
       let addedIssues = 0;
       let removedIssues = 0;
 
       for (const entry of changelogEntries) {
+        logger.debug(`Processing changelog entry:`, {
+          issueKey: entry.jiraIssueKey,
+          changeType: entry.changeType,
+          fromSprintId: entry.fromSprintId,
+          toSprintId: entry.toSprintId,
+          storyPoints: entry.issue?.storyPoints || 0
+        });
+
         if (entry.changeType === 'sprint_added' && entry.toSprintId === sprintId) {
           // Issue added to this sprint
           addedIssues++;
-          addedStoryPoints += entry.issue?.storyPoints || 0;
+          const points = parseFloat(String(entry.issue?.storyPoints || 0)) || 0;
+          addedStoryPoints += points;
+          logger.debug(`Added issue ${entry.jiraIssueKey}: ${points} points`);
         } else if (entry.changeType === 'sprint_removed' && entry.fromSprintId === sprintId) {
           // Issue removed from this sprint
           removedIssues++;
-          removedStoryPoints += entry.issue?.storyPoints || 0;
+          const points = parseFloat(String(entry.issue?.storyPoints || 0)) || 0;
+          removedStoryPoints += points;
+          logger.debug(`Removed issue ${entry.jiraIssueKey}: ${points} points`);
         } else if (entry.changeType === 'sprint_changed') {
           if (entry.toSprintId === sprintId && entry.fromSprintId !== sprintId) {
             // Issue moved to this sprint from another sprint
             addedIssues++;
-            addedStoryPoints += entry.issue?.storyPoints || 0;
+            const points = parseFloat(String(entry.issue?.storyPoints || 0)) || 0;
+            addedStoryPoints += points;
+            logger.debug(`Moved to sprint ${entry.jiraIssueKey}: ${points} points`);
           } else if (entry.fromSprintId === sprintId && entry.toSprintId !== sprintId) {
             // Issue moved from this sprint to another sprint
             removedIssues++;
-            removedStoryPoints += entry.issue?.storyPoints || 0;
+            const points = parseFloat(String(entry.issue?.storyPoints || 0)) || 0;
+            removedStoryPoints += points;
+            logger.debug(`Moved from sprint ${entry.jiraIssueKey}: ${points} points`);
+          }
+        } else if (entry.changeType === 'story_points_changed' && 
+                   (entry.fromSprintId === sprintId || entry.toSprintId === sprintId)) {
+          // Story points changed while issue was in this sprint
+          const pointsChange = entry.storyPointsChange || 0;
+          if (pointsChange > 0) {
+            addedStoryPoints += pointsChange;
+            logger.debug(`Story points increased for ${entry.jiraIssueKey}: +${pointsChange} points`);
+          } else if (pointsChange < 0) {
+            removedStoryPoints += Math.abs(pointsChange);
+            logger.debug(`Story points decreased for ${entry.jiraIssueKey}: ${pointsChange} points`);
           }
         }
       }
