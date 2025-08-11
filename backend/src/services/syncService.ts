@@ -9,6 +9,7 @@ import { KanbanBoard } from '../models/KanbanBoard';
 import { jiraService } from './jiraService';
 import { MetricsCalculationService } from './MetricsCalculationService';
 import { kanbanSyncService } from './kanbanSyncService';
+import { IssueChangelogService } from './IssueChangelogService';
 
 interface SyncOptions {
   forceSync?: boolean;
@@ -23,6 +24,7 @@ interface SyncResult {
   boards: number;
   sprints: number;
   issues: number;
+  changelogEntries: number;
   metrics: number;
   kanbanBoards: number;
   kanbanIssues: number;
@@ -43,6 +45,7 @@ class SyncService {
       boards: 0,
       sprints: 0,
       issues: 0,
+      changelogEntries: 0,
       metrics: 0,
       kanbanBoards: 0,
       kanbanIssues: 0,
@@ -111,6 +114,12 @@ class SyncService {
         result.issues = issuesResult.synced;
         result.errors.push(...issuesResult.errors);
 
+        // Sync issue changelogs (required for churn rate calculations)
+        logger.info('Syncing issue changelogs...');
+        const changelogResult = await this.syncChangelogs();
+        result.changelogEntries = changelogResult.synced;
+        result.errors.push(...changelogResult.errors);
+
         // Calculate metrics
         const metricsResult = await this.calculateMetrics();
         result.metrics = metricsResult.calculated;
@@ -133,6 +142,7 @@ class SyncService {
           boards: result.boards,
           sprints: result.sprints,
           issues: result.issues,
+          changelogEntries: result.changelogEntries,
           metrics: result.metrics,
           kanbanIssues: result.kanbanIssues,
           kanbanMetrics: result.kanbanMetrics,
@@ -595,6 +605,27 @@ class SyncService {
     }
   }
 
+  private async syncChangelogs(): Promise<{ synced: number; errors: string[] }> {
+    const result = { synced: 0, errors: [] as string[] };
+
+    try {
+      logger.info('Syncing issue changelogs for churn rate calculations...');
+      
+      const changelogService = new IssueChangelogService();
+      const syncResult = await changelogService.syncAllIssueChangelogs();
+      
+      result.synced = syncResult.addedChangelogEntries || 0;
+      
+      logger.info(`Synced ${result.synced} changelog entries`);
+      
+      return result;
+    } catch (error) {
+      logger.error('Failed to sync issue changelogs:', error);
+      result.errors.push(`Failed to sync issue changelogs: ${error}`);
+      return result;
+    }
+  }
+
   private async calculateMetrics(): Promise<{ calculated: number; errors: string[] }> {
     const result = { calculated: 0, errors: [] as string[] };
 
@@ -768,6 +799,7 @@ class SyncService {
       boards: 0,
       sprints: 0,
       issues: 0,
+      changelogEntries: 0,
       metrics: 0,
       kanbanBoards: 0,
       kanbanIssues: 0,
@@ -813,6 +845,7 @@ class SyncService {
       boards: 0,
       sprints: 0,
       issues: 0,
+      changelogEntries: 0,
       metrics: 0,
       kanbanBoards: 0,
       kanbanIssues: 0,
@@ -858,6 +891,7 @@ class SyncService {
       boards: 0,
       sprints: 0,
       issues: 0,
+      changelogEntries: 0,
       metrics: 0,
       kanbanBoards: 0,
       kanbanIssues: 0,
