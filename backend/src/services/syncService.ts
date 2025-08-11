@@ -5,6 +5,7 @@ import { Sprint } from '../models/Sprint';
 import { Issue } from '../models/Issue';
 import { SprintMetrics } from '../models/SprintMetrics';
 import { SyncOperation } from '../models/SyncOperation';
+import { DistributedLock } from '../models/DistributedLock';
 import { KanbanBoard } from '../models/KanbanBoard';
 import { jiraService } from './jiraService';
 import { MetricsCalculationService } from './MetricsCalculationService';
@@ -40,6 +41,9 @@ class SyncService {
   private readonly RETRY_DELAY = 1000;
 
   async syncAll(options: SyncOptions = {}): Promise<SyncResult> {
+    const lockName = 'sync-all';
+    let lockInfo: { acquired: boolean; lock?: DistributedLock; existingLockPodId?: string } | null = null;
+
     const result: SyncResult = {
       projects: 0,
       boards: 0,
@@ -54,6 +58,22 @@ class SyncService {
     };
 
     try {
+      // Try to acquire distributed lock first
+      logger.info('🔒 Attempting to acquire distributed lock for full sync...');
+      lockInfo = await DistributedLock.acquireLock(lockName, 60); // 60 minute lock duration
+
+      if (!lockInfo.acquired) {
+        const message = `Full sync is already running on pod ${lockInfo.existingLockPodId}. Skipping to avoid duplicate work.`;
+        logger.warn(message);
+        return {
+          ...result,
+          throttled: true,
+          throttleMessage: message,
+        };
+      }
+
+      logger.info(`✅ Successfully acquired distributed lock for full sync (Pod ID: ${lockInfo.lock!.podId})`);
+
       // Check throttling unless bypassed
       if (!options.bypassThrottle) {
         const throttleCheck = await SyncOperation.canPerformSync('full');
@@ -165,6 +185,16 @@ class SyncService {
       logger.error('Full sync process failed:', error);
       result.errors.push(`Full sync failed: ${error}`);
       return result;
+    } finally {
+      // Always release the distributed lock if we acquired it
+      if (lockInfo?.acquired && lockInfo.lock) {
+        try {
+          await DistributedLock.releaseLock(lockName, lockInfo.lock.podId);
+          logger.info(`🔓 Released distributed lock for full sync (Pod ID: ${lockInfo.lock.podId})`);
+        } catch (lockError) {
+          logger.error('Failed to release distributed lock:', lockError);
+        }
+      }
     }
   }
 
@@ -794,6 +824,9 @@ class SyncService {
   }
 
   async syncProject(projectKey: string, options: Omit<SyncOptions, 'projectKeys'> = {}): Promise<SyncResult> {
+    const lockName = `sync-project-${projectKey}`;
+    let lockInfo: { acquired: boolean; lock?: DistributedLock; existingLockPodId?: string } | null = null;
+
     const result: SyncResult = {
       projects: 0,
       boards: 0,
@@ -808,6 +841,22 @@ class SyncService {
     };
 
     try {
+      // Try to acquire distributed lock first
+      logger.info(`🔒 Attempting to acquire distributed lock for project sync: ${projectKey}`);
+      lockInfo = await DistributedLock.acquireLock(lockName, 30); // 30 minute lock duration
+
+      if (!lockInfo.acquired) {
+        const message = `Project sync for ${projectKey} is already running on pod ${lockInfo.existingLockPodId}. Skipping to avoid duplicate work.`;
+        logger.warn(message);
+        return {
+          ...result,
+          throttled: true,
+          throttleMessage: message,
+        };
+      }
+
+      logger.info(`✅ Successfully acquired distributed lock for project sync: ${projectKey} (Pod ID: ${lockInfo.lock!.podId})`);
+
       // Check throttling unless bypassed
       if (!options.bypassThrottle) {
         const throttleCheck = await SyncOperation.canPerformSync('project');
@@ -836,6 +885,16 @@ class SyncService {
       logger.error(`Project sync failed for ${projectKey}:`, error);
       result.errors.push(`Project sync failed: ${error}`);
       return result;
+    } finally {
+      // Always release the distributed lock if we acquired it
+      if (lockInfo?.acquired && lockInfo.lock) {
+        try {
+          await DistributedLock.releaseLock(lockName, lockInfo.lock.podId);
+          logger.info(`🔓 Released distributed lock for project sync: ${projectKey} (Pod ID: ${lockInfo.lock.podId})`);
+        } catch (lockError) {
+          logger.error(`Failed to release distributed lock for project ${projectKey}:`, lockError);
+        }
+      }
     }
   }
 

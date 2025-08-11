@@ -11,6 +11,7 @@ import { IssueChangelog } from '../models/IssueChangelog';
 import { SprintMetrics } from '../models/SprintMetrics';
 import { BoardMetrics } from '../models/BoardMetrics';
 import { SyncOperation } from '../models/SyncOperation';
+import { DistributedLock } from '../models/DistributedLock';
 import { KanbanBoard } from '../models/KanbanBoard';
 import { KanbanIssue } from '../models/KanbanIssue';
 import { KanbanMetrics } from '../models/KanbanMetrics';
@@ -76,6 +77,8 @@ async function initializeModels(): Promise<void> {
   BoardMetrics.initialize(sequelize);
   logger.debug('Initializing SyncOperation model...');
   SyncOperation.initialize(sequelize);
+  logger.debug('Initializing DistributedLock model...');
+  DistributedLock.initialize(sequelize);
   logger.debug('Initializing KanbanBoard model...');
   KanbanBoard.initialize(sequelize);
   logger.debug('Initializing KanbanIssue model...');
@@ -84,10 +87,10 @@ async function initializeModels(): Promise<void> {
   KanbanMetrics.initialize(sequelize);
 
   // Define associations
-  defineAssociations();
+  await defineAssociations();
 }
 
-function defineAssociations(): void {
+async function defineAssociations(): Promise<void> {
   // Project -> Board (one-to-many)
   Project.hasMany(Board, { foreignKey: 'projectId', as: 'boards' });
   Board.belongsTo(Project, { foreignKey: 'projectId', as: 'project' });
@@ -130,6 +133,27 @@ function defineAssociations(): void {
   // KanbanBoard -> KanbanMetrics (one-to-one)
   KanbanBoard.hasOne(KanbanMetrics, { foreignKey: 'kanbanBoardId', as: 'metrics' });
   KanbanMetrics.belongsTo(KanbanBoard, { foreignKey: 'kanbanBoardId', as: 'kanbanBoard' });
+
+  // Cleanup expired locks on startup
+  logger.info('🧹 Cleaning up expired distributed locks...');
+  try {
+    const cleanedCount = await DistributedLock.cleanupExpiredLocks();
+    logger.info(`✅ Cleaned up ${cleanedCount} expired locks during startup`);
+  } catch (error) {
+    logger.warn('⚠️ Failed to cleanup expired locks during startup:', error);
+  }
+
+  // Set up periodic cleanup of expired locks every 10 minutes
+  setInterval(async () => {
+    try {
+      const cleanedCount = await DistributedLock.cleanupExpiredLocks();
+      if (cleanedCount > 0) {
+        logger.info(`🧹 Periodic cleanup: cleaned up ${cleanedCount} expired locks`);
+      }
+    } catch (error) {
+      logger.warn('⚠️ Periodic lock cleanup failed:', error);
+    }
+  }, 10 * 60 * 1000); // 10 minutes
 }
 
 export function getSequelizeInstance(): Sequelize | null {

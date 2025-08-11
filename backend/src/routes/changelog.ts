@@ -3,6 +3,7 @@ import { logger } from '../utils/logger';
 import { IssueChangelogService } from '../services/IssueChangelogService';
 import { MetricsCalculationService } from '../services/MetricsCalculationService';
 import { ChurnDiagnosticService } from '../scripts/diagnose-churn-metrics';
+import { DistributedLock } from '../models/DistributedLock';
 
 const router = Router();
 
@@ -11,7 +12,26 @@ const router = Router();
  * POST /api/changelog/sync
  */
 router.post('/sync', async (req: Request, res: Response) => {
+  const lockName = 'changelog-sync';
+  let lockInfo: { acquired: boolean; lock?: DistributedLock; existingLockPodId?: string } | null = null;
+
   try {
+    logger.info('🔒 Attempting to acquire distributed lock for changelog sync...');
+    
+    // Try to acquire distributed lock
+    lockInfo = await DistributedLock.acquireLock(lockName, 30); // 30 minute lock duration
+
+    if (!lockInfo.acquired) {
+      const message = `Changelog sync is already running on pod ${lockInfo.existingLockPodId}. Please wait for it to complete.`;
+      logger.warn(message);
+      return res.status(409).json({
+        success: false,
+        message,
+        error: 'SYNC_IN_PROGRESS'
+      });
+    }
+
+    logger.info(`✅ Successfully acquired distributed lock for changelog sync (Pod ID: ${lockInfo.lock!.podId})`);
     logger.info('📡 Starting manual changelog sync...');
     
     const changelogService = new IssueChangelogService();
@@ -32,6 +52,16 @@ router.post('/sync', async (req: Request, res: Response) => {
       message: 'Changelog sync failed',
       error: error instanceof Error ? error.message : 'Unknown error'
     });
+  } finally {
+    // Always release the distributed lock if we acquired it
+    if (lockInfo?.acquired && lockInfo.lock) {
+      try {
+        await DistributedLock.releaseLock(lockName, lockInfo.lock.podId);
+        logger.info(`🔓 Released distributed lock for changelog sync (Pod ID: ${lockInfo.lock.podId})`);
+      } catch (lockError) {
+        logger.error('Failed to release distributed lock for changelog sync:', lockError);
+      }
+    }
   }
 });
 
